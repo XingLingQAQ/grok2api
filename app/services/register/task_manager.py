@@ -264,7 +264,8 @@ class TaskManager:
         """为 Token 开启 NSFW 模式"""
         try:
             from app.services.grok.services.nsfw import NSFWService
-            service = NSFWService()
+            from app.services.proxy import get_effective_proxy
+            service = NSFWService(proxy=get_effective_proxy())
             result = await service.enable(sso_token)
             if result.success:
                 logger.debug(f"NSFW 开启成功: {sso_token[:20]}...")

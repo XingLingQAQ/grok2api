@@ -581,7 +581,8 @@ class ChatService:
         )
 
         # 请求 Grok
-        service = GrokChatService()
+        from app.services.proxy import get_effective_proxy
+        service = GrokChatService(proxy=get_effective_proxy())
         try:
             response, _, model_name = await service.chat_openai(token, chat_request)
         except AppException:

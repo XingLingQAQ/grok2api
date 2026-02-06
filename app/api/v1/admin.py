@@ -362,7 +362,8 @@ async def enable_nsfw_api(data: dict):
 
     try:
         mgr = await get_token_manager()
-        nsfw_service = NSFWService()
+        from app.services.proxy import get_effective_proxy
+        nsfw_service = NSFWService(proxy=get_effective_proxy())
 
         # 收集 token 列表
         tokens: list[str] = []
@@ -474,7 +475,8 @@ async def enable_nsfw_api_async(data: dict):
     from app.services.token.manager import get_token_manager
 
     mgr = await get_token_manager()
-    nsfw_service = NSFWService()
+    from app.services.proxy import get_effective_proxy
+    nsfw_service = NSFWService(proxy=get_effective_proxy())
 
     tokens: list[str] = []
     if isinstance(data.get("token"), str) and data["token"].strip():

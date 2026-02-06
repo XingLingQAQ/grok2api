@@ -496,7 +496,8 @@ class VideoService:
                 await upload_service.close()
 
         # 生成视频
-        service = VideoService()
+        from app.services.proxy import get_effective_proxy
+        service = VideoService(proxy=get_effective_proxy())
 
         # 图片转视频
         if image_url:
