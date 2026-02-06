@@ -91,9 +91,11 @@ class ProxyPool:
 
     def get_status(self) -> Dict[str, Any]:
         """获取代理池状态"""
+        unchecked = sum(1 for p in self._proxies.values() if p.last_check is None)
         return {
             "total": self.total_count,
             "alive": self.alive_count,
+            "unchecked": unchecked,
             "fetching": self._fetching,
             "checking": self._checking,
             "last_fetch": self._last_fetch,

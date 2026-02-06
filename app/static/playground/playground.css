@@ -176,3 +176,79 @@
 @keyframes blink {
   50% { opacity: 0; }
 }
+
+/* Mode hint badge */
+.mode-hint {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.mode-hint.mode-chat {
+  background: #f0f0f0;
+  color: var(--accents-5);
+}
+
+.mode-hint.mode-image {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.mode-hint.mode-video {
+  background: #fdf4ff;
+  color: #9333ea;
+}
+
+/* Media in chat */
+.chat-media-container {
+  margin-top: 8px;
+}
+
+.chat-media-img {
+  max-width: 100%;
+  max-height: 400px;
+  border-radius: 8px;
+  margin-top: 8px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.chat-media-img:hover {
+  opacity: 0.9;
+}
+
+.chat-media-video {
+  max-width: 100%;
+  max-height: 400px;
+  border-radius: 8px;
+  margin-top: 8px;
+  background: #000;
+}
+
+.chat-media-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--accents-4);
+  font-size: 13px;
+  padding: 12px 0;
+}
+
+.chat-media-loading::before {
+  content: '';
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--accents-2);
+  border-top-color: var(--accents-5);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

@@ -6,6 +6,7 @@ let apiKey = '';
 let messages = [];
 let isStreaming = false;
 let abortController = null;
+let modelMeta = {}; // { model_id: { is_image, is_video } }
 
 async function init() {
   apiKey = await ensureApiKey();
@@ -24,14 +25,44 @@ async function loadModels() {
     const data = await res.json();
     const select = document.getElementById('model-select');
     select.innerHTML = '';
+
+    // 图片/视频模型关键词检测
+    const IMAGE_KEYWORDS = ['imagine'];
+    const VIDEO_KEYWORDS = ['video'];
+
     (data.data || []).forEach(m => {
       const opt = document.createElement('option');
       opt.value = m.id;
       opt.textContent = m.id;
       select.appendChild(opt);
+
+      const idLower = m.id.toLowerCase();
+      const isImage = IMAGE_KEYWORDS.some(k => idLower.includes(k)) && !VIDEO_KEYWORDS.some(k => idLower.includes(k));
+      const isVideo = VIDEO_KEYWORDS.some(k => idLower.includes(k));
+      modelMeta[m.id] = { is_image: isImage, is_video: isVideo };
     });
+
+    select.addEventListener('change', updateModeHint);
+    updateModeHint();
   } catch (e) {
     console.error('Load models error:', e);
+  }
+}
+
+function updateModeHint() {
+  const model = document.getElementById('model-select').value;
+  const meta = modelMeta[model] || {};
+  const hint = document.getElementById('mode-hint');
+  if (!hint) return;
+  if (meta.is_image) {
+    hint.textContent = 'Image';
+    hint.className = 'mode-hint mode-image';
+  } else if (meta.is_video) {
+    hint.textContent = 'Video';
+    hint.className = 'mode-hint mode-video';
+  } else {
+    hint.textContent = 'Chat';
+    hint.className = 'mode-hint mode-chat';
   }
 }
 
@@ -61,6 +92,9 @@ async function sendMessage() {
   const content = textarea.value.trim();
   if (!content) return;
 
+  const model = document.getElementById('model-select').value;
+  const meta = modelMeta[model] || {};
+
   // 添加用户消息
   messages.push({ role: 'user', content });
   appendMessage('user', content);
@@ -68,41 +102,16 @@ async function sendMessage() {
   textarea.style.height = 'auto';
   updateStats();
 
-  // 切换按钮为停止
   setStreamingState(true);
-
-  const model = document.getElementById('model-select').value;
-  const stream = document.getElementById('stream-toggle').checked;
   const startTime = Date.now();
 
   try {
     abortController = new AbortController();
 
-    const res = await fetch('/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        ...buildAuthHeaders(apiKey),
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ model, messages, stream }),
-      signal: abortController.signal
-    });
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: { message: res.statusText } }));
-      throw new Error(err.error?.message || err.detail || `HTTP ${res.status}`);
-    }
-
-    if (stream) {
-      await handleStream(res, startTime);
+    if (meta.is_image) {
+      await handleImageGeneration(model, content, startTime);
     } else {
-      const data = await res.json();
-      const reply = data.choices?.[0]?.message?.content || '';
-      messages.push({ role: 'assistant', content: reply });
-      appendMessage('assistant', reply);
-      const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-      const usage = data.usage;
-      updateStats(usage, duration);
+      await handleChatCompletion(model, startTime);
     }
   } catch (e) {
     if (e.name === 'AbortError') {
@@ -117,8 +126,123 @@ async function sendMessage() {
   }
 }
 
-// 处理 SSE 流
-async function handleStream(res, startTime) {
+// 图片生成
+async function handleImageGeneration(model, prompt, startTime) {
+  const stream = document.getElementById('stream-toggle').checked;
+
+  const res = await fetch('/v1/images/generations', {
+    method: 'POST',
+    headers: { ...buildAuthHeaders(apiKey), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model, prompt, n: 1, stream }),
+    signal: abortController.signal
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: { message: res.statusText } }));
+    throw new Error(err.error?.message || err.detail || `HTTP ${res.status}`);
+  }
+
+  if (stream) {
+    await handleImageStream(res, startTime);
+  } else {
+    const data = await res.json();
+    const images = (data.data || []).map(d => d.b64_json).filter(Boolean);
+    if (images.length > 0) {
+      const html = images.map(b64 => `<img src="data:image/png;base64,${b64}" class="chat-media-img">`).join('');
+      messages.push({ role: 'assistant', content: '[image]' });
+      appendMessageHtml('assistant', html);
+    } else {
+      appendMessage('assistant', '图片生成失败');
+    }
+    const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+    updateStats(data.usage, duration);
+  }
+}
+
+// 图片流式
+async function handleImageStream(res, startTime) {
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  const msgEl = appendMessageHtml('assistant', '<div class="chat-media-loading">生成中...</div>');
+  const contentEl = msgEl.querySelector('.chat-msg-content');
+  let images = [];
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data: ') && !trimmed.startsWith('event: ')) continue;
+        if (trimmed.startsWith('event: ')) continue;
+        const payload = trimmed.slice(6);
+        if (payload === '[DONE]') continue;
+        try {
+          const chunk = JSON.parse(payload);
+          if (chunk.data) {
+            for (const d of chunk.data) {
+              if (d.b64_json) images.push(d.b64_json);
+              if (d.url) images.push(d.url);
+            }
+          }
+          // partial image event
+          if (chunk.b64_json) images.push(chunk.b64_json);
+        } catch { /* skip */ }
+      }
+    }
+  } finally {
+    if (images.length > 0) {
+      const html = images.map(src => {
+        if (src.startsWith('http')) return `<img src="${src}" class="chat-media-img">`;
+        return `<img src="data:image/png;base64,${src}" class="chat-media-img">`;
+      }).join('');
+      contentEl.innerHTML = html;
+      messages.push({ role: 'assistant', content: '[image]' });
+    } else {
+      contentEl.innerHTML = '图片生成失败';
+    }
+    const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+    updateStats(null, duration);
+    scrollToBottom();
+  }
+}
+
+// Chat Completions（含视频模型）
+async function handleChatCompletion(model, startTime) {
+  const stream = document.getElementById('stream-toggle').checked;
+
+  const res = await fetch('/v1/chat/completions', {
+    method: 'POST',
+    headers: { ...buildAuthHeaders(apiKey), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model, messages, stream }),
+    signal: abortController.signal
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: { message: res.statusText } }));
+    throw new Error(err.error?.message || err.detail || `HTTP ${res.status}`);
+  }
+
+  if (stream) {
+    await handleChatStream(res, startTime);
+  } else {
+    const data = await res.json();
+    const reply = data.choices?.[0]?.message?.content || '';
+    messages.push({ role: 'assistant', content: reply });
+    appendMessage('assistant', reply);
+    checkAndRenderMedia(reply);
+    const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+    updateStats(data.usage, duration);
+  }
+}
+
+// Chat SSE 流
+async function handleChatStream(res, startTime) {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
@@ -157,13 +281,33 @@ async function handleStream(res, startTime) {
     }
   } finally {
     contentEl.classList.remove('typing-cursor');
-    contentEl.innerHTML = renderContent(fullContent);
+    const rendered = renderContent(fullContent);
+    contentEl.innerHTML = rendered;
     if (fullContent) {
       messages.push({ role: 'assistant', content: fullContent });
+      // 检查是否包含媒体 URL
+      checkAndRenderMediaInEl(contentEl, fullContent);
     }
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
     updateStats(usage, duration);
     scrollToBottom();
+  }
+}
+
+// 检测内容中的媒体 URL 并追加渲染
+function checkAndRenderMedia(content) { /* handled in renderContent */ }
+
+function checkAndRenderMediaInEl(el, content) {
+  // 检测视频 URL（mp4）
+  const videoRegex = /https?:\/\/[^\s"'<>]+\.mp4[^\s"'<>]*/gi;
+  const videoUrls = content.match(videoRegex);
+  if (videoUrls) {
+    const container = document.createElement('div');
+    container.className = 'chat-media-container';
+    videoUrls.forEach(url => {
+      container.innerHTML += `<video src="${escapeHtml(url)}" controls class="chat-media-video"></video>`;
+    });
+    el.appendChild(container);
   }
 }
 
@@ -192,7 +336,7 @@ function setStreamingState(streaming) {
   }
 }
 
-// 添加消息到 UI
+// 添加消息到 UI（文本）
 function appendMessage(role, content, isPlaceholder = false) {
   const empty = document.getElementById('chat-empty');
   if (empty) empty.style.display = 'none';
@@ -217,6 +361,30 @@ function appendMessage(role, content, isPlaceholder = false) {
   return div;
 }
 
+// 添加消息到 UI（原始 HTML）
+function appendMessageHtml(role, html) {
+  const empty = document.getElementById('chat-empty');
+  if (empty) empty.style.display = 'none';
+
+  const container = document.getElementById('chat-messages');
+  const div = document.createElement('div');
+  div.className = 'chat-msg';
+
+  const avatarLabel = role === 'user' ? 'U' : 'AI';
+
+  div.innerHTML = `
+    <div class="chat-msg-avatar ${role}">${avatarLabel}</div>
+    <div class="chat-msg-body">
+      <div class="chat-msg-role">${role === 'user' ? 'You' : 'Assistant'}</div>
+      <div class="chat-msg-content">${html}</div>
+    </div>
+  `;
+
+  container.appendChild(div);
+  scrollToBottom();
+  return div;
+}
+
 // 简易 Markdown 渲染
 function renderContent(text) {
   if (!text) return '';
@@ -229,6 +397,9 @@ function renderContent(text) {
   html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
   // 粗体
   html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  // 图片 URL（inline）
+  html = html.replace(/(https?:\/\/[^\s"'<>]+\.(?:png|jpg|jpeg|gif|webp)(?:\?[^\s"'<>]*)?)/gi,
+    '<img src="$1" class="chat-media-img">');
   return html;
 }
 

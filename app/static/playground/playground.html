@@ -10,7 +10,7 @@
   <link href="https://cdn.jsdelivr.net/npm/geist@1.0.0/dist/fonts/geist-sans/style.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/geist@1.0.0/dist/fonts/geist-mono/style.css" rel="stylesheet">
   <link href="/static/common/common.css?v=3" rel="stylesheet">
-  <link href="/static/playground/playground.css?v=1" rel="stylesheet">
+  <link href="/static/playground/playground.css?v=2" rel="stylesheet">
   <link href="/static/common/toast.css" rel="stylesheet">
 </head>
 
@@ -28,6 +28,7 @@
           <p class="text-[var(--accents-4)] mt-1 text-sm">OpenAI 兼容 Chat Completions 测试。</p>
         </div>
         <div class="flex items-center gap-3">
+          <span id="mode-hint" class="mode-hint mode-chat">Chat</span>
           <div class="geist-select">
             <select id="model-select">
               <option value="grok-3">grok-3</option>
@@ -89,7 +90,7 @@
   <script src="/static/common/header.js?v=2"></script>
   <script src="/static/common/footer.js?v=1"></script>
   <script src="/static/common/toast.js"></script>
-  <script src="/static/playground/playground.js?v=1"></script>
+  <script src="/static/playground/playground.js?v=2"></script>
 </body>
 
 </html>

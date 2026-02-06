@@ -151,6 +151,12 @@ td.table-empty {
   cursor: not-allowed;
 }
 
+.geist-button svg,
+.geist-button-outline svg,
+.geist-button-danger svg {
+  flex-shrink: 0;
+}
+
 .geist-button-danger {
   height: 32px;
   font-size: 0.875rem;

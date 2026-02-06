@@ -33,12 +33,13 @@ async function loadStatus() {
 
     const total = data.total || 0;
     const alive = data.alive || 0;
-    const failed = total - alive;
-    const rate = total > 0 ? ((alive / total) * 100).toFixed(1) : '0';
+    const unchecked = data.unchecked || 0;
+    const checked = total - unchecked;
+    const rate = checked > 0 ? ((alive / checked) * 100).toFixed(1) : '0';
 
     document.getElementById('stat-total').textContent = total;
     document.getElementById('stat-alive').textContent = alive;
-    document.getElementById('stat-failed').textContent = failed;
+    document.getElementById('stat-unchecked').textContent = unchecked;
     document.getElementById('stat-rate').textContent = `${rate}%`;
 
     // 如果页面加载时已在运行，自动启动轮询
@@ -293,10 +294,12 @@ function startPoll(type) {
       // 更新统计
       const total = data.total || 0;
       const alive = data.alive || 0;
+      const unchecked = data.unchecked || 0;
+      const checked = total - unchecked;
       document.getElementById('stat-total').textContent = total;
       document.getElementById('stat-alive').textContent = alive;
-      document.getElementById('stat-failed').textContent = total - alive;
-      document.getElementById('stat-rate').textContent = total > 0 ? ((alive / total) * 100).toFixed(1) + '%' : '0%';
+      document.getElementById('stat-unchecked').textContent = unchecked;
+      document.getElementById('stat-rate').textContent = checked > 0 ? ((alive / checked) * 100).toFixed(1) + '%' : '0%';
 
       // 更新进度条
       if (data.fetching && data.fetch_progress) {
