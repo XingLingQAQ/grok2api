@@ -174,6 +174,67 @@
         </div>
       </div>
 
+      <!-- Auto Register Panel -->
+      <div class="control-panel" id="auto-register-panel">
+        <div class="flex items-center justify-between mb-4">
+          <div class="flex items-center gap-3">
+            <span class="text-sm font-medium text-[var(--accents-6)]">自动注册</span>
+            <span class="text-xs text-[var(--accents-4)]" id="auto-reg-status">未启用</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <label class="geist-switch">
+              <input type="checkbox" id="auto-reg-enabled" onchange="toggleAutoRegister()">
+              <span class="geist-switch-track"><span class="geist-switch-thumb"></span></span>
+              <span class="geist-switch-label">启用</span>
+            </label>
+          </div>
+        </div>
+        <div class="control-row" style="flex-wrap: wrap; gap: 12px;">
+          <div class="control-item">
+            <label class="control-label">模式</label>
+            <div class="geist-select">
+              <select id="auto-reg-mode">
+                <option value="normal">普通模式</option>
+                <option value="nsfw">NSFW 模式</option>
+              </select>
+            </div>
+          </div>
+          <div class="control-item">
+            <label class="control-label">数量</label>
+            <input type="number" id="auto-reg-count" class="geist-input" value="10" min="1" max="20000" style="width: 80px;">
+          </div>
+          <div class="control-item">
+            <label class="control-label">定时（分钟）</label>
+            <input type="number" id="auto-reg-interval" class="geist-input" value="0" min="0" style="width: 80px;">
+          </div>
+          <div class="control-item">
+            <label class="control-label">Token 阈值</label>
+            <input type="number" id="auto-reg-token-threshold" class="geist-input" value="0" min="0" style="width: 80px;">
+          </div>
+          <div class="control-item">
+            <label class="control-label">配额阈值</label>
+            <input type="number" id="auto-reg-chat-threshold" class="geist-input" value="0" min="0" style="width: 80px;">
+          </div>
+        </div>
+        <div class="flex items-center gap-2 mt-3">
+          <button onclick="saveAutoRegisterConfig()" class="geist-button-outline gap-2" id="btn-save-auto-reg">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+              <polyline points="17 21 17 13 7 13 7 21"></polyline>
+              <polyline points="7 3 7 8 15 8"></polyline>
+            </svg>
+            保存配置
+          </button>
+          <button onclick="triggerAutoRegister()" class="geist-button-outline gap-2" id="btn-trigger-auto-reg">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+            手动触发
+          </button>
+          <span class="text-xs text-[var(--accents-4)]" id="auto-reg-info"></span>
+        </div>
+      </div>
+
       <!-- Progress Bar -->
       <div id="progress-container" class="progress-container hidden">
         <div class="progress-bar">

@@ -24,6 +24,15 @@ async function init() {
   await loadStatus();
   await loadResults();
   await loadProxyStatus();
+
+  // 自动注册面板：仅在注册功能启用时显示
+  const autoPanel = document.getElementById('auto-register-panel');
+  if (autoPanel) {
+    autoPanel.style.display = enabled ? '' : 'none';
+  }
+  if (enabled) {
+    await loadAutoRegisterConfig();
+  }
 }
 
 document.addEventListener('DOMContentLoaded', init);
@@ -586,6 +595,127 @@ async function clearProxies() {
   } catch (e) {
     console.error('Clear proxies error:', e);
     showToast('清空失败', 'error');
+  }
+}
+
+// ==================== 自动注册功能 ====================
+
+async function loadAutoRegisterConfig() {
+  try {
+    const res = await fetch('/api/v1/admin/config', {
+      headers: buildAuthHeaders(apiKey)
+    });
+    if (!res.ok) return;
+    const cfg = await res.json();
+    const reg = cfg.register || {};
+
+    const el = (id) => document.getElementById(id);
+    if (el('auto-reg-enabled')) el('auto-reg-enabled').checked = !!reg.auto_register;
+    if (el('auto-reg-mode')) el('auto-reg-mode').value = reg.auto_register_mode || 'normal';
+    if (el('auto-reg-count')) el('auto-reg-count').value = reg.auto_register_count || 10;
+    if (el('auto-reg-interval')) el('auto-reg-interval').value = reg.auto_register_interval || 0;
+    if (el('auto-reg-token-threshold')) el('auto-reg-token-threshold').value = reg.auto_register_token_threshold || 0;
+    if (el('auto-reg-chat-threshold')) el('auto-reg-chat-threshold').value = reg.auto_register_chat_threshold || 0;
+
+    await loadAutoRegisterStatus();
+  } catch (e) {
+    console.error('Load auto register config error:', e);
+  }
+}
+
+async function loadAutoRegisterStatus() {
+  try {
+    const res = await fetch('/api/v1/admin/register/auto/status', {
+      headers: buildAuthHeaders(apiKey)
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    const statusEl = document.getElementById('auto-reg-status');
+    const infoEl = document.getElementById('auto-reg-info');
+    if (statusEl) {
+      statusEl.textContent = data.running ? '运行中' : '未启用';
+    }
+    if (infoEl) {
+      const parts = [];
+      if (data.last_trigger) parts.push('上次: ' + formatTime(data.last_trigger));
+      if (data.last_reason) parts.push('原因: ' + data.last_reason);
+      if (data.next_trigger) parts.push('下次: ' + formatTime(data.next_trigger));
+      infoEl.textContent = parts.join(' · ');
+    }
+  } catch (e) {
+    console.error('Load auto register status error:', e);
+  }
+}
+
+function toggleAutoRegister() {
+  // UI only, actual save via saveAutoRegisterConfig
+}
+
+async function saveAutoRegisterConfig() {
+  const btn = document.getElementById('btn-save-auto-reg');
+  btn.disabled = true;
+
+  try {
+    // Load current config
+    const res = await fetch('/api/v1/admin/config', {
+      headers: buildAuthHeaders(apiKey)
+    });
+    if (!res.ok) throw new Error('Failed to load config');
+    const cfg = await res.json();
+
+    if (!cfg.register) cfg.register = {};
+    cfg.register.auto_register = document.getElementById('auto-reg-enabled').checked;
+    cfg.register.auto_register_mode = document.getElementById('auto-reg-mode').value;
+    cfg.register.auto_register_count = parseInt(document.getElementById('auto-reg-count').value) || 10;
+    cfg.register.auto_register_concurrent = 8;
+    cfg.register.auto_register_interval = parseInt(document.getElementById('auto-reg-interval').value) || 0;
+    cfg.register.auto_register_token_threshold = parseInt(document.getElementById('auto-reg-token-threshold').value) || 0;
+    cfg.register.auto_register_chat_threshold = parseInt(document.getElementById('auto-reg-chat-threshold').value) || 0;
+
+    const saveRes = await fetch('/api/v1/admin/config', {
+      method: 'POST',
+      headers: {
+        ...buildAuthHeaders(apiKey),
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(cfg)
+    });
+
+    if (saveRes.ok) {
+      showToast('自动注册配置已保存', 'success');
+      await loadAutoRegisterStatus();
+    } else {
+      showToast('保存失败', 'error');
+    }
+  } catch (e) {
+    console.error('Save auto register config error:', e);
+    showToast('保存失败: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function triggerAutoRegister() {
+  const btn = document.getElementById('btn-trigger-auto-reg');
+  btn.disabled = true;
+
+  try {
+    const res = await fetch('/api/v1/admin/register/auto/trigger', {
+      method: 'POST',
+      headers: buildAuthHeaders(apiKey)
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showToast('自动注册已触发', 'success');
+      await loadAutoRegisterStatus();
+    } else {
+      showToast(data.detail || '触发失败', 'error');
+    }
+  } catch (e) {
+    console.error('Trigger auto register error:', e);
+    showToast('触发失败', 'error');
+  } finally {
+    btn.disabled = false;
   }
 }
 
