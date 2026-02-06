@@ -263,7 +263,7 @@ class TaskManager:
     async def _enable_nsfw(self, sso_token: str) -> None:
         """为 Token 开启 NSFW 模式"""
         try:
-            from app.services.grok.nsfw import NSFWService
+            from app.services.grok.services.nsfw import NSFWService
             service = NSFWService()
             result = await service.enable(sso_token)
             if result.success:

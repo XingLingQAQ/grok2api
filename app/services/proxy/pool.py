@@ -65,6 +65,9 @@ class ProxyPool:
         self._checking = False
         self._last_fetch: Optional[str] = None
         self._last_check: Optional[str] = None
+        # 进度追踪
+        self._fetch_progress: Dict[str, Any] = {"done": 0, "total": 0, "new": 0}
+        self._check_progress: Dict[str, Any] = {"done": 0, "total": 0, "alive": 0}
 
     @property
     def total_count(self) -> int:
@@ -91,6 +94,8 @@ class ProxyPool:
             "checking": self._checking,
             "last_fetch": self._last_fetch,
             "last_check": self._last_check,
+            "fetch_progress": self._fetch_progress if self._fetching else None,
+            "check_progress": self._check_progress if self._checking else None,
         }
 
     def get_alive_proxies(self, limit: int = 100) -> List[Dict[str, Any]]:
@@ -115,24 +120,28 @@ class ProxyPool:
 
         self._fetching = True
         new_count = 0
+        total_sources = len(PROXY_SOURCES)
+        self._fetch_progress = {"done": 0, "total": total_sources, "new": 0}
 
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
-                tasks = [self._fetch_from_source(client, url) for url in PROXY_SOURCES]
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-
-                for i, result in enumerate(results):
-                    if isinstance(result, Exception):
-                        logger.debug(f"代理源抓取失败: {PROXY_SOURCES[i]} - {result}")
-                        continue
-                    if isinstance(result, list):
+                for i, url in enumerate(PROXY_SOURCES):
+                    try:
+                        result = await self._fetch_from_source(client, url)
                         for proxy in result:
                             if proxy not in self._proxies:
                                 self._proxies[proxy] = ProxyInfo(
                                     proxy=proxy,
-                                    source=PROXY_SOURCES[i],
+                                    source=url,
                                 )
                                 new_count += 1
+                    except Exception as e:
+                        logger.debug(f"代理源抓取失败: {url} - {e}")
+                    self._fetch_progress = {
+                        "done": i + 1,
+                        "total": total_sources,
+                        "new": new_count,
+                    }
 
             self._last_fetch = datetime.now().isoformat()
             logger.info(f"代理抓取完成: 新增 {new_count}, 总计 {self.total_count}")
@@ -175,28 +184,36 @@ class ProxyPool:
 
         self._checking = True
         alive_count = 0
+        proxy_keys = list(self._proxies.keys())
+        total = len(proxy_keys)
+        done = 0
+        self._check_progress = {"done": 0, "total": total, "alive": 0}
 
         try:
             semaphore = asyncio.Semaphore(max_concurrent)
-            tasks = []
 
-            for proxy_str in list(self._proxies.keys()):
-                tasks.append(self._check_single_proxy(semaphore, proxy_str))
+            async def _check_and_track(proxy_str: str):
+                nonlocal done, alive_count
+                result = await self._check_single_proxy(semaphore, proxy_str)
+                done += 1
+                if result:
+                    alive_count += 1
+                self._check_progress = {"done": done, "total": total, "alive": alive_count}
 
-            results = await asyncio.gather(*tasks, return_exceptions=True)
+            tasks = [_check_and_track(p) for p in proxy_keys]
+            await asyncio.gather(*tasks, return_exceptions=True)
 
             # 更新存活列表
             self._alive_proxies = []
             for proxy_str, info in self._proxies.items():
                 if info.alive:
                     self._alive_proxies.append(proxy_str)
-                    alive_count += 1
 
             # 按延迟排序
             self._alive_proxies.sort(key=lambda p: self._proxies[p].latency)
 
             self._last_check = datetime.now().isoformat()
-            logger.info(f"代理测活完成: 存活 {alive_count}/{self.total_count}")
+            logger.info(f"代理测活完成: 存活 {alive_count}/{total}")
 
         except Exception as e:
             logger.error(f"代理测活异常: {e}")
