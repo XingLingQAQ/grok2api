@@ -73,11 +73,47 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"Failed to initialize Turnstile Solver: {e}")
 
+    # 5. 启动代理池调度器
+    if get_config("proxy.enabled", False):
+        try:
+            from app.services.proxy.scheduler import get_proxy_scheduler
+            proxy_scheduler = get_proxy_scheduler()
+            proxy_scheduler.start()
+        except Exception as e:
+            logger.warning(f"Failed to start ProxyScheduler: {e}")
+
+    # 6. 启动自动注册调度器
+    if register_enabled and get_config("register.auto_register", False):
+        try:
+            from app.services.register.auto_scheduler import get_auto_register_scheduler
+            auto_reg_scheduler = get_auto_register_scheduler()
+            auto_reg_scheduler.start()
+        except Exception as e:
+            logger.warning(f"Failed to start AutoRegisterScheduler: {e}")
+
     logger.info("Application startup complete.")
     yield
 
     # 关闭
     logger.info("Shutting down Grok2API...")
+
+    # 关闭自动注册调度器
+    if register_enabled and get_config("register.auto_register", False):
+        try:
+            from app.services.register.auto_scheduler import get_auto_register_scheduler
+            get_auto_register_scheduler().stop()
+            logger.info("AutoRegisterScheduler stopped")
+        except Exception as e:
+            logger.debug(f"Error stopping AutoRegisterScheduler: {e}")
+
+    # 关闭代理池调度器
+    if get_config("proxy.enabled", False):
+        try:
+            from app.services.proxy.scheduler import get_proxy_scheduler
+            get_proxy_scheduler().stop()
+            logger.info("ProxyScheduler stopped")
+        except Exception as e:
+            logger.debug(f"Error stopping ProxyScheduler: {e}")
 
     # 关闭 Turnstile Solver
     if turnstile_solver_initialized:
