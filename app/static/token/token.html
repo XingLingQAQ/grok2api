@@ -152,12 +152,14 @@
           <button class="geist-button-outline text-xs px-3" onclick="clearAllSelection()">取消全选</button>
           <button id="page-prev" class="geist-button-outline text-xs px-3" onclick="goPrevPage()">上一页</button>
           <button id="page-next" class="geist-button-outline text-xs px-3" onclick="goNextPage()">下一页</button>
-          <select id="page-size" class="geist-input h-[30px]" onchange="changePageSize()">
-            <option value="20">20 / 页</option>
-            <option value="50" selected>50 / 页</option>
-            <option value="100">100 / 页</option>
-            <option value="200">200 / 页</option>
-          </select>
+          <div class="geist-select">
+            <select id="page-size" onchange="changePageSize()">
+              <option value="20">20 / 页</option>
+              <option value="50" selected>50 / 页</option>
+              <option value="100">100 / 页</option>
+              <option value="200">200 / 页</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -217,10 +219,12 @@
       <div class="space-y-4">
         <div>
           <label class="modal-label mb-1 block">目标 Pool</label>
-          <select id="import-pool" class="geist-input">
-            <option value="ssoBasic">ssoBasic</option>
-            <option value="ssoSuper">ssoSuper</option>
-          </select>
+          <div class="geist-select" style="width: 100%;">
+            <select id="import-pool">
+              <option value="ssoBasic">ssoBasic</option>
+              <option value="ssoSuper">ssoSuper</option>
+            </select>
+          </div>
         </div>
         <div>
           <label class="modal-label mb-1 block">Token 列表 (每行一个)</label>
@@ -257,10 +261,12 @@
         </div>
         <div>
           <label class="modal-label mb-1 block">类型</label>
-          <select id="edit-pool" class="geist-input">
-            <option value="ssoBasic">ssoBasic</option>
-            <option value="ssoSuper">ssoSuper</option>
-          </select>
+          <div class="geist-select" style="width: 100%;">
+            <select id="edit-pool">
+              <option value="ssoBasic">ssoBasic</option>
+              <option value="ssoSuper">ssoSuper</option>
+            </select>
+          </div>
         </div>
         <div>
           <label class="modal-label mb-1 block">额度</label>
