@@ -47,6 +47,7 @@ logs/
 # Data
 data/*.json
 data/token.json
+data/config.toml
 data/tmp/
 data/.locks/
 
@@ -57,3 +58,4 @@ htmlcov/
 
 # Project specific
 config.local.toml
+.ace-tool/

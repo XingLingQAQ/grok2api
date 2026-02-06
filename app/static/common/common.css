@@ -296,3 +296,112 @@ td.table-empty {
   color: var(--accents-4);
   margin-top: 2px;
 }
+
+/* Custom Select Dropdown */
+.geist-select {
+  position: relative;
+  display: inline-block;
+}
+
+.geist-select select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  width: 100%;
+  font-size: 0.8125rem;
+  border-radius: 0.5rem;
+  padding: 0.35rem 2rem 0.35rem 0.5rem;
+  outline: none;
+  border: 1px solid #e6e6e6;
+  transition: all 0.2s;
+  background: #fff;
+  color: var(--accents-7);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.geist-select select:focus {
+  border-color: #bdbdbd;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.03);
+}
+
+.geist-select select:disabled {
+  background: #f5f5f5;
+  color: var(--accents-4);
+  cursor: not-allowed;
+}
+
+.geist-select::after {
+  content: '';
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid var(--accents-4);
+  pointer-events: none;
+}
+
+.geist-select select:disabled + .geist-select::after,
+.geist-select:has(select:disabled)::after {
+  border-top-color: var(--accents-3);
+}
+
+/* Switch Toggle */
+.geist-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.geist-switch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.geist-switch-track {
+  width: 36px;
+  height: 20px;
+  background: #e5e5e5;
+  border-radius: 10px;
+  transition: background 0.2s;
+  position: relative;
+}
+
+.geist-switch input:checked + .geist-switch-track {
+  background: #000;
+}
+
+.geist-switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.2s;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.geist-switch input:checked + .geist-switch-track .geist-switch-thumb {
+  transform: translateX(16px);
+}
+
+.geist-switch input:disabled + .geist-switch-track {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.geist-switch-label {
+  font-size: 13px;
+  color: var(--accents-6);
+}
+

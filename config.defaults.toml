@@ -52,14 +52,13 @@ nsfw_batch_size = 50
 nsfw_max_tokens = 1000
 
 [register]
-# 是否启用注册功能（启用后会初始化浏览器池）
-enabled = false
+# 是否启用注册功能（启用后会初始化 Turnstile Solver）
+enabled = true
 # 邮箱服务配置
 mail_api_key = "mk_dZvkBRJYNqMnhupv7C-OBa17k6cPzOgP"
 mail_domain = "669698.xyz"
 mail_api_url = "https://mail.xingling.one"
-# Turnstile Solver 配置
-turnstile_solver_url = "http://127.0.0.1:5072"
+# Turnstile Solver 配置（集成在主应用中）
 turnstile_solver_threads = 5
 turnstile_headless = true
 turnstile_timeout = 60.0

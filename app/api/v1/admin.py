@@ -1282,20 +1282,24 @@ async def start_register_task(data: dict):
 
     count = data.get("count", 1)
     concurrent = data.get("concurrent") or get_config("register.register_concurrent", 8)
+    mode = data.get("mode", "normal")  # normal 或 nsfw
 
     if not isinstance(count, int) or count < 1:
         raise HTTPException(status_code=400, detail="count 必须为正整数")
     if not isinstance(concurrent, int) or concurrent < 1:
         raise HTTPException(status_code=400, detail="concurrent 必须为正整数")
+    if mode not in ("normal", "nsfw"):
+        raise HTTPException(status_code=400, detail="mode 必须为 normal 或 nsfw")
 
     mgr = get_task_manager()
     try:
-        task_id = await mgr.start(count, concurrent)
+        task_id = await mgr.start(count, concurrent, mode=mode)
         return {
             "status": "success",
             "task_id": task_id,
             "count": count,
             "concurrent": concurrent,
+            "mode": mode,
         }
     except RuntimeError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1454,3 +1458,95 @@ async def get_register_config():
         "register_concurrent": get_config("register.register_concurrent", 8),
         "auto_import_tokens": get_config("register.auto_import_tokens", True),
     }
+
+
+# ==================== 代理池管理 ====================
+
+
+@router.get("/api/v1/admin/proxy/status", dependencies=[Depends(verify_api_key)])
+async def get_proxy_status():
+    """获取代理池状态"""
+    from app.services.proxy import get_proxy_pool
+
+    pool = get_proxy_pool()
+    return pool.get_status()
+
+
+@router.get("/api/v1/admin/proxy/list", dependencies=[Depends(verify_api_key)])
+async def get_proxy_list(limit: int = Query(default=100, ge=1, le=1000)):
+    """获取存活代理列表"""
+    from app.services.proxy import get_proxy_pool
+
+    pool = get_proxy_pool()
+    return {
+        "proxies": pool.get_alive_proxies(limit),
+        "total": pool.alive_count,
+    }
+
+
+@router.post("/api/v1/admin/proxy/fetch", dependencies=[Depends(verify_api_key)])
+async def fetch_proxies():
+    """从源抓取代理"""
+    from app.services.proxy import get_proxy_pool
+
+    pool = get_proxy_pool()
+    if pool.is_fetching:
+        return {"status": "running", "message": "正在抓取中"}
+
+    asyncio.create_task(pool.fetch_proxies())
+    return {"status": "started", "message": "开始抓取代理"}
+
+
+@router.post("/api/v1/admin/proxy/check", dependencies=[Depends(verify_api_key)])
+async def check_proxies(data: dict = None):
+    """测活代理"""
+    from app.services.proxy import get_proxy_pool
+
+    pool = get_proxy_pool()
+    if pool.is_checking:
+        return {"status": "running", "message": "正在测活中"}
+
+    max_concurrent = (data or {}).get("concurrent", 100)
+    asyncio.create_task(pool.check_proxies(max_concurrent))
+    return {"status": "started", "message": "开始测活代理"}
+
+
+@router.post("/api/v1/admin/proxy/clear", dependencies=[Depends(verify_api_key)])
+async def clear_proxies():
+    """清空代理池"""
+    from app.services.proxy import get_proxy_pool
+
+    pool = get_proxy_pool()
+    pool.clear()
+    return {"status": "success", "message": "代理池已清空"}
+
+
+@router.post("/api/v1/admin/proxy/add", dependencies=[Depends(verify_api_key)])
+async def add_proxy(data: dict):
+    """手动添加代理"""
+    from app.services.proxy import get_proxy_pool
+
+    proxy = data.get("proxy", "").strip()
+    if not proxy:
+        raise HTTPException(status_code=400, detail="proxy 不能为空")
+
+    pool = get_proxy_pool()
+    if pool.add_proxy(proxy):
+        return {"status": "success", "message": "代理已添加"}
+    return {"status": "exists", "message": "代理已存在"}
+
+
+@router.post("/api/v1/admin/proxy/remove", dependencies=[Depends(verify_api_key)])
+async def remove_proxy(data: dict):
+    """移除代理"""
+    from app.services.proxy import get_proxy_pool
+
+    proxy = data.get("proxy", "").strip()
+    if not proxy:
+        raise HTTPException(status_code=400, detail="proxy 不能为空")
+
+    pool = get_proxy_pool()
+    if pool.remove_proxy(proxy):
+        return {"status": "success", "message": "代理已移除"}
+    return {"status": "not_found", "message": "代理不存在"}
+

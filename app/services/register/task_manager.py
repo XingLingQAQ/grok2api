@@ -60,6 +60,7 @@ class TaskManager:
         self._lock = asyncio.Lock()
         self._event_callbacks: List[Callable[[str, Any], None]] = []
         self._registrars: List[GrokRegister] = []
+        self._mode: str = "normal"  # normal 或 nsfw
 
     @property
     def task_id(self) -> Optional[str]:
@@ -98,13 +99,14 @@ class TaskManager:
             except Exception as e:
                 logger.debug(f"事件回调异常: {e}")
 
-    async def start(self, count: int, concurrent: int = 8) -> str:
+    async def start(self, count: int, concurrent: int = 8, mode: str = "normal") -> str:
         """
         启动批量注册任务
 
         Args:
             count: 注册数量
             concurrent: 并发数
+            mode: 注册模式 (normal 或 nsfw)
 
         Returns:
             task_id
@@ -116,6 +118,7 @@ class TaskManager:
             # 重置状态
             self._cancelled = False
             self._task_id = str(uuid.uuid4())
+            self._mode = mode
             self._stats = RegisterTaskStats(
                 total=count,
                 success=0,
@@ -130,11 +133,12 @@ class TaskManager:
                 self._run_batch(count, concurrent)
             )
 
-            logger.info(f"注册任务启动: {self._task_id}, 数量={count}, 并发={concurrent}")
+            logger.info(f"注册任务启动: {self._task_id}, 数量={count}, 并发={concurrent}, 模式={mode}")
             self._emit_event("task_started", {
                 "task_id": self._task_id,
                 "total": count,
                 "concurrent": concurrent,
+                "mode": mode,
             })
 
             return self._task_id
@@ -240,9 +244,13 @@ class TaskManager:
 
         if result.success:
             self._stats.success += 1
-            # 自动导入 Token
-            if result.sso_token and get_config("register.auto_import_tokens", True):
-                await self._auto_import_token(result.sso_token)
+            if result.sso_token:
+                # NSFW 模式下先开启 NSFW
+                if self._mode == "nsfw":
+                    await self._enable_nsfw(result.sso_token)
+                # 自动导入 Token
+                if get_config("register.auto_import_tokens", True):
+                    await self._auto_import_token(result.sso_token)
         else:
             self._stats.failed += 1
 
@@ -252,12 +260,25 @@ class TaskManager:
             "stats": self._stats.to_dict(),
         })
 
+    async def _enable_nsfw(self, sso_token: str) -> None:
+        """为 Token 开启 NSFW 模式"""
+        try:
+            from app.services.grok.nsfw import NSFWService
+            service = NSFWService()
+            result = await service.enable(sso_token)
+            if result.success:
+                logger.debug(f"NSFW 开启成功: {sso_token[:20]}...")
+            else:
+                logger.warning(f"NSFW 开启失败: {result.error or result.grpc_message}")
+        except Exception as e:
+            logger.warning(f"NSFW 开启异常: {e}")
+
     async def _auto_import_token(self, sso_token: str) -> None:
         """自动导入 Token 到 Token 管理"""
         try:
             from app.services.token.manager import get_token_manager
             mgr = await get_token_manager()
-            await mgr.add_token(sso_token, pool="ssoBasic")
+            await mgr.add(sso_token, pool_name="ssoBasic")
             logger.debug(f"Token 自动导入成功: {sso_token[:20]}...")
         except Exception as e:
             logger.warning(f"Token 自动导入失败: {e}")

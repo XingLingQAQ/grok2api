@@ -61,17 +61,17 @@ async def lifespan(app: FastAPI):
         scheduler = get_scheduler(interval)
         scheduler.start()
 
-    # 4. 初始化注册浏览器池（如果启用）
+    # 4. 初始化注册功能（如果启用）
     register_enabled = get_config("register.enabled", False)
-    browser_pool_initialized = False
+    turnstile_solver_initialized = False
     if register_enabled:
         try:
-            from app.services.register.browser_pool import init_browser_pool
-            await init_browser_pool()
-            browser_pool_initialized = True
-            logger.info("Register browser pool initialized")
+            from app.services.register.turnstile_solver import init_turnstile_solver
+            await init_turnstile_solver()
+            turnstile_solver_initialized = True
+            logger.info("Turnstile Solver initialized")
         except Exception as e:
-            logger.warning(f"Failed to initialize browser pool: {e}")
+            logger.warning(f"Failed to initialize Turnstile Solver: {e}")
 
     logger.info("Application startup complete.")
     yield
@@ -79,14 +79,14 @@ async def lifespan(app: FastAPI):
     # 关闭
     logger.info("Shutting down Grok2API...")
 
-    # 关闭浏览器池
-    if browser_pool_initialized:
+    # 关闭 Turnstile Solver
+    if turnstile_solver_initialized:
         try:
-            from app.services.register.browser_pool import close_browser_pool
-            await close_browser_pool()
-            logger.info("Register browser pool closed")
+            from app.services.register.turnstile_solver import close_turnstile_solver
+            await close_turnstile_solver()
+            logger.info("Turnstile Solver closed")
         except Exception as e:
-            logger.debug(f"Error closing browser pool: {e}")
+            logger.debug(f"Error closing Turnstile Solver: {e}")
 
     from app.core.storage import StorageFactory
 

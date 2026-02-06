@@ -13,12 +13,17 @@ let pageSize = 50;
 let totalResults = 0;
 let results = [];
 
+// 代理状态
+let proxyEnabled = false;
+let proxyList = [];
+
 // 初始化
 async function init() {
   apiKey = await ensureApiKey();
   if (apiKey === null) return;
   await loadStatus();
   await loadResults();
+  await loadProxyStatus();
 }
 
 document.addEventListener('DOMContentLoaded', init);
@@ -79,11 +84,13 @@ function updateButtons() {
   const btnStop = document.getElementById('btn-stop');
   const inputCount = document.getElementById('input-count');
   const inputConcurrent = document.getElementById('input-concurrent');
+  const inputMode = document.getElementById('input-mode');
 
   btnStart.disabled = !enabled || running;
   btnStop.disabled = !running;
   inputCount.disabled = running;
   inputConcurrent.disabled = running;
+  inputMode.disabled = running;
 
   // 进度条
   const progressContainer = document.getElementById('progress-container');
@@ -98,9 +105,12 @@ function updateButtons() {
 async function startRegister() {
   const count = parseInt(document.getElementById('input-count').value) || 1;
   const concurrent = parseInt(document.getElementById('input-concurrent').value) || 8;
+  const mode = document.getElementById('input-mode').value || 'normal';
+  const proxySelect = document.getElementById('proxy-select');
+  const proxy = proxyEnabled ? proxySelect.value : '';
 
-  if (count < 1 || count > 100) {
-    showToast('注册数量必须在 1-100 之间', 'error');
+  if (count < 1 || count > 20000) {
+    showToast('注册数量必须在 1-20000 之间', 'error');
     return;
   }
 
@@ -111,7 +121,7 @@ async function startRegister() {
         ...buildAuthHeaders(apiKey),
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ count, concurrent })
+      body: JSON.stringify({ count, concurrent, mode, proxy })
     });
 
     if (!res.ok) {
@@ -366,7 +376,188 @@ function updateProgress(stats) {
   document.getElementById('progress-text').textContent = `${done} / ${total} (${percent}%)`;
 }
 
-// 工具函数
+// ==================== 代理池功能 ====================
+
+// 加载代理状态
+async function loadProxyStatus() {
+  try {
+    const res = await fetch('/api/v1/admin/proxy/status', {
+      headers: buildAuthHeaders(apiKey)
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    updateProxyStats(data);
+    await loadProxyList();
+  } catch (e) {
+    console.error('Load proxy status error:', e);
+  }
+}
+
+// 更新代理统计
+function updateProxyStats(data) {
+  const statsEl = document.getElementById('proxy-stats');
+  if (statsEl) {
+    statsEl.textContent = `总计 ${data.total || 0} · 存活 ${data.alive || 0}`;
+  }
+}
+
+// 加载代理列表
+async function loadProxyList() {
+  try {
+    const res = await fetch('/api/v1/admin/proxy/list?limit=100', {
+      headers: buildAuthHeaders(apiKey)
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    proxyList = data.proxies || [];
+    updateProxySelect();
+  } catch (e) {
+    console.error('Load proxy list error:', e);
+  }
+}
+
+// 更新代理下拉框
+function updateProxySelect() {
+  const select = document.getElementById('proxy-select');
+  if (!select) return;
+
+  // 保留前两个选项
+  while (select.options.length > 2) {
+    select.remove(2);
+  }
+
+  // 添加存活代理
+  proxyList.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p.proxy;
+    opt.textContent = `${p.proxy} (${p.latency}ms)`;
+    select.appendChild(opt);
+  });
+}
+
+// 切换代理启用状态
+function toggleProxy() {
+  const checkbox = document.getElementById('proxy-enabled');
+  const select = document.getElementById('proxy-select');
+  proxyEnabled = checkbox.checked;
+  select.disabled = !proxyEnabled;
+}
+
+// 抓取代理
+async function fetchProxies() {
+  const btn = document.getElementById('btn-fetch-proxy');
+  btn.disabled = true;
+  btn.innerHTML = '<svg class="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-6.219-8.56"></path></svg> 抓取中...';
+
+  try {
+    const res = await fetch('/api/v1/admin/proxy/fetch', {
+      method: 'POST',
+      headers: buildAuthHeaders(apiKey)
+    });
+    if (!res.ok) throw new Error('Fetch failed');
+    showToast('开始抓取代理，请稍候...', 'success');
+
+    // 轮询状态
+    pollProxyStatus();
+  } catch (e) {
+    console.error('Fetch proxies error:', e);
+    showToast('抓取失败', 'error');
+    btn.disabled = false;
+    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-6.219-8.56"></path></svg> 抓取代理';
+  }
+}
+
+// 测活代理
+async function checkProxies() {
+  const btn = document.getElementById('btn-check-proxy');
+  btn.disabled = true;
+  btn.innerHTML = '<svg class="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-6.219-8.56"></path></svg> 测活中...';
+
+  try {
+    const res = await fetch('/api/v1/admin/proxy/check', {
+      method: 'POST',
+      headers: {
+        ...buildAuthHeaders(apiKey),
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ concurrent: 100 })
+    });
+    if (!res.ok) throw new Error('Check failed');
+    showToast('开始测活代理，请稍候...', 'success');
+
+    // 轮询状态
+    pollProxyStatus();
+  } catch (e) {
+    console.error('Check proxies error:', e);
+    showToast('测活失败', 'error');
+    btn.disabled = false;
+    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg> 测活';
+  }
+}
+
+// 轮询代理状态
+let proxyPollTimer = null;
+function pollProxyStatus() {
+  if (proxyPollTimer) clearInterval(proxyPollTimer);
+
+  proxyPollTimer = setInterval(async () => {
+    try {
+      const res = await fetch('/api/v1/admin/proxy/status', {
+        headers: buildAuthHeaders(apiKey)
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      updateProxyStats(data);
+
+      // 如果不再抓取/测活，停止轮询
+      if (!data.fetching && !data.checking) {
+        clearInterval(proxyPollTimer);
+        proxyPollTimer = null;
+        await loadProxyList();
+        resetProxyButtons();
+        showToast('代理操作完成', 'success');
+      }
+    } catch (e) {
+      console.error('Poll proxy status error:', e);
+    }
+  }, 2000);
+}
+
+// 重置代理按钮
+function resetProxyButtons() {
+  const btnFetch = document.getElementById('btn-fetch-proxy');
+  const btnCheck = document.getElementById('btn-check-proxy');
+
+  btnFetch.disabled = false;
+  btnFetch.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-6.219-8.56"></path></svg> 抓取代理';
+
+  btnCheck.disabled = false;
+  btnCheck.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg> 测活';
+}
+
+// 清空代理
+async function clearProxies() {
+  if (!confirm('确定要清空代理池吗？')) return;
+
+  try {
+    const res = await fetch('/api/v1/admin/proxy/clear', {
+      method: 'POST',
+      headers: buildAuthHeaders(apiKey)
+    });
+    if (!res.ok) throw new Error('Clear failed');
+
+    proxyList = [];
+    updateProxySelect();
+    updateProxyStats({ total: 0, alive: 0 });
+    showToast('代理池已清空', 'success');
+  } catch (e) {
+    console.error('Clear proxies error:', e);
+    showToast('清空失败', 'error');
+  }
+}
+
+// ==================== 工具函数 ====================
+
 function escapeHtml(str) {
   if (!str) return '';
   return str.replace(/&/g, '&amp;')
