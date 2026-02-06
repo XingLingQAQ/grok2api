@@ -295,3 +295,14 @@ def get_proxy_pool() -> ProxyPool:
     if _proxy_pool is None:
         _proxy_pool = ProxyPool()
     return _proxy_pool
+
+
+def get_effective_proxy() -> Optional[str]:
+    """根据配置获取当前应使用的代理"""
+    mode = get_config("proxy.mode", "none")
+    if mode == "pool":
+        pool = get_proxy_pool()
+        return pool.get_random_proxy()
+    elif mode == "fixed":
+        return get_config("grok.base_proxy_url", "") or None
+    return None

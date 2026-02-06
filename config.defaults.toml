@@ -66,5 +66,21 @@ turnstile_timeout = 60.0
 register_concurrent = 8
 # 注册成功后自动导入 Token 到 Token 管理
 auto_import_tokens = true
+# 自动注册
+auto_register = false
+auto_register_mode = "normal"
+auto_register_count = 10
+auto_register_concurrent = 8
+auto_register_interval = 0
+auto_register_token_threshold = 0
+auto_register_chat_threshold = 0
+
+[proxy]
+enabled = false
+mode = "none"
+auto_fetch_interval = 0
+auto_check_interval = 0
+alive_threshold = 0
+check_concurrent = 100
 
 
