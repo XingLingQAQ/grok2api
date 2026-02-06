@@ -106,6 +106,18 @@ class ProxyPool:
                 result.append(self._proxies[proxy_str].to_dict())
         return result
 
+    def get_all_proxies(self, page: int = 1, page_size: int = 50) -> Dict[str, Any]:
+        """获取所有代理（分页），按存活优先、延迟升序排列"""
+        all_keys = sorted(
+            self._proxies.keys(),
+            key=lambda p: (not self._proxies[p].alive, self._proxies[p].latency),
+        )
+        total = len(all_keys)
+        start = (page - 1) * page_size
+        end = start + page_size
+        proxies = [self._proxies[k].to_dict() for k in all_keys[start:end]]
+        return {"proxies": proxies, "total": total, "page": page, "page_size": page_size}
+
     def get_random_proxy(self) -> Optional[str]:
         """随机获取一个存活代理"""
         if not self._alive_proxies:

@@ -602,6 +602,12 @@ async def admin_register_page():
     return await render_template("register/register.html")
 
 
+@router.get("/admin/proxy", response_class=HTMLResponse, include_in_schema=False)
+async def admin_proxy_page():
+    """代理池管理页"""
+    return await render_template("proxy/proxy.html")
+
+
 @router.get("/api/v1/admin/cache", dependencies=[Depends(verify_api_key)])
 async def get_cache_stats_api(request: Request):
     """获取缓存统计"""
@@ -1508,16 +1514,25 @@ async def get_proxy_status():
     return pool.get_status()
 
 
+@router.get("/api/v1/admin/proxy/scheduler/status", dependencies=[Depends(verify_api_key)])
+async def get_proxy_scheduler_status():
+    """获取代理池调度器状态"""
+    from app.services.proxy.scheduler import get_proxy_scheduler
+
+    scheduler = get_proxy_scheduler()
+    return scheduler.get_status()
+
+
 @router.get("/api/v1/admin/proxy/list", dependencies=[Depends(verify_api_key)])
-async def get_proxy_list(limit: int = Query(default=100, ge=1, le=1000)):
-    """获取存活代理列表"""
+async def get_proxy_list(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=500),
+):
+    """获取所有代理列表（分页）"""
     from app.services.proxy import get_proxy_pool
 
     pool = get_proxy_pool()
-    return {
-        "proxies": pool.get_alive_proxies(limit),
-        "total": pool.alive_count,
-    }
+    return pool.get_all_proxies(page, page_size)
 
 
 @router.post("/api/v1/admin/proxy/fetch", dependencies=[Depends(verify_api_key)])

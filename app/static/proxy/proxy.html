@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Grok2API - 代理池管理</title>
+  <link rel="icon" href="/static/favicon/favicon.ico">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/geist@1.0.0/dist/fonts/geist-sans/style.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/geist@1.0.0/dist/fonts/geist-mono/style.css" rel="stylesheet">
+  <link href="/static/common/common.css?v=3" rel="stylesheet">
+  <link href="/static/register/register.css?v=2" rel="stylesheet">
+  <link href="/static/common/toast.css" rel="stylesheet">
+</head>
+
+<body class="min-h-screen flex flex-col" style="background-color: var(--bg);">
+
+  <div id="toast-container" class="toast-container"></div>
+  <div id="app-header"></div>
+
+  <main class="space-y-6 flex-1 container mx-auto max-w-5xl px-6 py-8 fade-in">
+    <div class="space-y-6">
+      <div>
+        <h2 class="text-2xl font-semibold tracking-tight">代理池管理</h2>
+        <p class="text-[var(--accents-4)] mt-1 text-sm">管理代理池，抓取、测活和监控代理状态。</p>
+      </div>
+
+      <div class="h-px bg-[var(--border)] my-6"></div>
+
+      <!-- Statistics -->
+      <div class="grid grid-cols-4 gap-4 mb-6" id="stats-container">
+        <div class="stat-card">
+          <div class="stat-value" id="stat-total">0</div>
+          <div class="stat-label">总计</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value text-green-600" id="stat-alive">0</div>
+          <div class="stat-label">存活</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value text-red-600" id="stat-failed">0</div>
+          <div class="stat-label">失败</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value text-blue-600" id="stat-rate">0%</div>
+          <div class="stat-label">存活率</div>
+        </div>
+      </div>
+
+      <!-- Control Panel -->
+      <div class="control-panel">
+        <div class="control-row">
+          <div class="control-item" style="flex: 1;">
+            <label class="control-label">手动添加</label>
+            <div class="flex gap-2">
+              <input type="text" id="input-proxy" class="geist-input" style="width: 100%;" placeholder="http://ip:port 或 socks5://ip:port">
+              <button onclick="addProxy()" class="geist-button gap-2">添加</button>
+            </div>
+          </div>
+          <div class="control-actions">
+            <button onclick="fetchProxies()" class="geist-button-outline gap-2" id="btn-fetch">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 12a9 9 0 11-6.219-8.56"></path>
+              </svg>
+              抓取代理
+            </button>
+            <button onclick="checkProxies()" class="geist-button-outline gap-2" id="btn-check">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                <polyline points="22 4 12 14.01 9 11.01"></polyline>
+              </svg>
+              测活
+            </button>
+            <button onclick="clearProxies()" class="geist-button-outline gap-2" id="btn-clear">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+              </svg>
+              清空
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Progress Bar -->
+      <div id="proxy-progress-container" class="progress-container hidden">
+        <div class="progress-bar">
+          <div class="progress-fill" id="proxy-progress-fill" style="width: 0%"></div>
+        </div>
+        <div class="progress-text" id="proxy-progress-text">0 / 0</div>
+      </div>
+
+      <!-- Scheduler Status -->
+      <div class="control-panel">
+        <div class="flex items-center justify-between mb-4">
+          <div class="flex items-center gap-3">
+            <span class="text-sm font-medium text-[var(--accents-6)]">调度器状态</span>
+            <span class="text-xs" id="scheduler-indicator">
+              <span class="inline-block w-2 h-2 rounded-full bg-gray-400 mr-1" id="scheduler-dot"></span>
+              <span id="scheduler-running-text">已停止</span>
+            </span>
+          </div>
+        </div>
+        <div class="grid grid-cols-3 gap-4 text-sm">
+          <div>
+            <span class="text-[var(--accents-4)]">上次抓取</span>
+            <div class="font-medium mt-1" id="scheduler-last-fetch">-</div>
+          </div>
+          <div>
+            <span class="text-[var(--accents-4)]">上次测活</span>
+            <div class="font-medium mt-1" id="scheduler-last-check">-</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Proxy Table -->
+      <div class="rounded-lg overflow-hidden bg-white mb-4 overflow-x-auto">
+        <table class="geist-table min-w-[900px]">
+          <thead>
+            <tr>
+              <th class="w-12">#</th>
+              <th class="text-left">代理地址</th>
+              <th class="w-20">状态</th>
+              <th class="w-24">延迟</th>
+              <th class="w-20">失败</th>
+              <th class="text-left">来源</th>
+              <th class="w-40">上次检测</th>
+              <th class="w-16">操作</th>
+            </tr>
+          </thead>
+          <tbody id="proxy-table-body">
+          </tbody>
+        </table>
+        <div id="empty-state" class="table-empty">
+          暂无代理数据，请点击"抓取代理"获取代理。
+        </div>
+      </div>
+
+      <!-- Pagination -->
+      <div class="pagination-bar">
+        <div id="pagination-info" class="text-xs text-[var(--accents-5)]">第 0 / 0 页 · 共 0 条</div>
+        <div class="flex items-center gap-2">
+          <button id="page-prev" class="geist-button-outline text-xs px-3" onclick="goPrevPage()">上一页</button>
+          <button id="page-next" class="geist-button-outline text-xs px-3" onclick="goNextPage()">下一页</button>
+          <div class="geist-select">
+            <select id="page-size" onchange="changePageSize()">
+              <option value="20">20 / 页</option>
+              <option value="50" selected>50 / 页</option>
+              <option value="100">100 / 页</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+  <div id="app-footer"></div>
+
+  <script src="/static/common/admin-auth.js?v=2"></script>
+  <script src="/static/common/header.js?v=2"></script>
+  <script src="/static/common/footer.js?v=1"></script>
+  <script src="/static/common/toast.js"></script>
+  <script src="/static/proxy/proxy.js?v=1"></script>
+</body>
+
+</html>
