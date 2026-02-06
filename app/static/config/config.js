@@ -26,7 +26,16 @@ const NUMERIC_FIELDS = new Set([
   'video_idle_timeout',
   'nsfw_max_concurrent',
   'nsfw_batch_size',
-  'nsfw_max_tokens'
+  'nsfw_max_tokens',
+  'auto_register_count',
+  'auto_register_concurrent',
+  'auto_register_interval',
+  'auto_register_token_threshold',
+  'auto_register_chat_threshold',
+  'auto_fetch_interval',
+  'auto_check_interval',
+  'alive_threshold',
+  'check_concurrent'
 ]);
 
 const LOCALE_MAP = {
@@ -85,6 +94,34 @@ const LOCALE_MAP = {
     "assets_batch_size": { title: "Assets 处理批次大小", desc: "批量查找/删除资产时的单批处理数量。推荐 10。" },
     "assets_max_tokens": { title: "Assets 处理最大数量", desc: "单次批量查找/删除资产时的处理数量上限。推荐 1000。" },
     "assets_delete_batch_size": { title: "Assets 单账号删除批量大小", desc: "单账号批量删除资产时的单批并发数量。推荐 10。" }
+  },
+  "register": {
+    "label": "注册设置",
+    "enabled": { title: "启用注册", desc: "是否启用注册功能（启用后会初始化 Turnstile Solver）。" },
+    "mail_api_key": { title: "邮箱 API Key", desc: "邮箱服务的 API 密钥。" },
+    "mail_domain": { title: "邮箱域名", desc: "注册使用的邮箱域名。" },
+    "mail_api_url": { title: "邮箱 API URL", desc: "邮箱服务的 API 地址。" },
+    "turnstile_solver_threads": { title: "Turnstile 线程数", desc: "Turnstile Solver 的浏览器实例数。" },
+    "turnstile_headless": { title: "Turnstile 无头模式", desc: "Turnstile Solver 是否使用无头浏览器。" },
+    "turnstile_timeout": { title: "Turnstile 超时", desc: "Turnstile 验证超时时间（秒）。" },
+    "register_concurrent": { title: "注册并发数", desc: "批量注册时的并发数。" },
+    "auto_import_tokens": { title: "自动导入 Token", desc: "注册成功后自动导入 Token 到管理池。" },
+    "auto_register": { title: "自动注册", desc: "是否启用自动注册功能。" },
+    "auto_register_mode": { title: "自动注册模式", desc: "自动注册的模式（normal 或 nsfw）。" },
+    "auto_register_count": { title: "自动注册数量", desc: "每次自动注册的账号数量。" },
+    "auto_register_concurrent": { title: "自动注册并发", desc: "自动注册的并发数。" },
+    "auto_register_interval": { title: "定时间隔（分钟）", desc: "自动注册定时触发间隔，0=不定时。" },
+    "auto_register_token_threshold": { title: "Token 数量阈值", desc: "可用 Token 低于此值触发自动注册，0=不启用。" },
+    "auto_register_chat_threshold": { title: "配额阈值", desc: "总剩余配额低于此值触发自动注册，0=不启用。" }
+  },
+  "proxy": {
+    "label": "代理池设置",
+    "enabled": { title: "启用代理池", desc: "全局代理池开关。" },
+    "mode": { title: "代理模式", desc: "代理使用模式。" },
+    "auto_fetch_interval": { title: "自动抓取间隔", desc: "代理池自动抓取间隔（分钟），0=不自动。" },
+    "auto_check_interval": { title: "自动测活间隔", desc: "代理池自动测活间隔（分钟），0=不自动。" },
+    "alive_threshold": { title: "存活阈值", desc: "存活代理低于此值自动抓取，0=不启用。" },
+    "check_concurrent": { title: "测活并发", desc: "代理测活并发数。" }
   }
 };
 
@@ -155,7 +192,11 @@ function buildSelectInput(section, key, val, options) {
   options.forEach(opt => {
     input.appendChild(createOption(opt.val, opt.text, val));
   });
-  return { input, node: input };
+  const wrapper = document.createElement('div');
+  wrapper.className = 'geist-select';
+  wrapper.style.width = '100%';
+  wrapper.appendChild(input);
+  return { input, node: wrapper };
 }
 
 function buildJsonInput(section, key, val) {
@@ -285,6 +326,19 @@ function renderConfig(data) {
         built = buildSelectInput(section, key, val, [
           { val: 'html', text: 'HTML' },
           { val: 'url', text: 'URL' }
+        ]);
+      }
+      else if (key === 'mode' && section === 'proxy') {
+        built = buildSelectInput(section, key, val, [
+          { val: 'none', text: '不使用代理' },
+          { val: 'pool', text: '代理池随机' },
+          { val: 'fixed', text: '固定代理' }
+        ]);
+      }
+      else if (key === 'auto_register_mode') {
+        built = buildSelectInput(section, key, val, [
+          { val: 'normal', text: '普通模式' },
+          { val: 'nsfw', text: 'NSFW 模式' }
         ]);
       }
       else if (Array.isArray(val) || typeof val === 'object') {
