@@ -31,7 +31,7 @@ async def init_turnstile_solver() -> None:
         if _solver is not None:
             return
 
-        pool_size = get_config("register.turnstile_solver_threads", 5)
+        pool_size = int(get_config("register.turnstile_solver_threads", 5))
         headless = get_config("register.turnstile_headless", True)
 
         # 导入原始的 TurnstileAPIServer
