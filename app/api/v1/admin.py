@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Query
+from fastapi import APIRouter, Depends, HTTPException, Request, Query, Response
 from fastapi.responses import HTMLResponse, StreamingResponse
 from app.core.auth import verify_api_key, verify_app_key, get_admin_api_key
 from app.core.config import config, get_config
@@ -10,6 +10,7 @@ import aiofiles
 import asyncio
 import orjson
 from app.core.logger import logger
+from typing import Optional
 
 
 router = APIRouter()
@@ -591,6 +592,12 @@ async def enable_nsfw_api_async(data: dict):
 async def admin_cache_page():
     """缓存管理页"""
     return await render_template("cache/cache.html")
+
+
+@router.get("/admin/register", response_class=HTMLResponse, include_in_schema=False)
+async def admin_register_page():
+    """注册管理页"""
+    return await render_template("register/register.html")
 
 
 @router.get("/api/v1/admin/cache", dependencies=[Depends(verify_api_key)])
@@ -1236,4 +1243,214 @@ async def clear_online_cache_api_async(data: dict):
         "status": "success",
         "task_id": task.id,
         "total": len(token_list),
+    }
+
+
+# ==================== 注册管理 API ====================
+
+
+@router.get("/api/v1/admin/register/status", dependencies=[Depends(verify_api_key)])
+async def get_register_status():
+    """获取注册任务状态"""
+    from app.services.register.task_manager import get_task_manager
+
+    enabled = get_config("register.enabled", False)
+    if not enabled:
+        return {
+            "enabled": False,
+            "running": False,
+            "stats": None,
+            "results_count": 0,
+        }
+
+    mgr = get_task_manager()
+    status = mgr.get_status()
+    return {
+        "enabled": True,
+        **status,
+    }
+
+
+@router.post("/api/v1/admin/register/start", dependencies=[Depends(verify_api_key)])
+async def start_register_task(data: dict):
+    """启动注册任务"""
+    from app.services.register.task_manager import get_task_manager
+
+    enabled = get_config("register.enabled", False)
+    if not enabled:
+        raise HTTPException(status_code=400, detail="注册功能未启用")
+
+    count = data.get("count", 1)
+    concurrent = data.get("concurrent") or get_config("register.register_concurrent", 8)
+
+    if not isinstance(count, int) or count < 1:
+        raise HTTPException(status_code=400, detail="count 必须为正整数")
+    if not isinstance(concurrent, int) or concurrent < 1:
+        raise HTTPException(status_code=400, detail="concurrent 必须为正整数")
+
+    mgr = get_task_manager()
+    try:
+        task_id = await mgr.start(count, concurrent)
+        return {
+            "status": "success",
+            "task_id": task_id,
+            "count": count,
+            "concurrent": concurrent,
+        }
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/api/v1/admin/register/stop", dependencies=[Depends(verify_api_key)])
+async def stop_register_task():
+    """停止注册任务"""
+    from app.services.register.task_manager import get_task_manager
+
+    enabled = get_config("register.enabled", False)
+    if not enabled:
+        raise HTTPException(status_code=400, detail="注册功能未启用")
+
+    mgr = get_task_manager()
+    await mgr.stop()
+    return {"status": "success", "message": "任务已停止"}
+
+
+@router.get("/api/v1/admin/register/results", dependencies=[Depends(verify_api_key)])
+async def get_register_results(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=500),
+):
+    """获取注册结果列表"""
+    from app.services.register.task_manager import get_task_manager
+
+    enabled = get_config("register.enabled", False)
+    if not enabled:
+        return {"results": [], "total": 0, "page": page, "page_size": page_size}
+
+    mgr = get_task_manager()
+    results = mgr.results
+    total = len(results)
+
+    start = (page - 1) * page_size
+    end = start + page_size
+    page_results = [r.to_dict() for r in results[start:end]]
+
+    return {
+        "results": page_results,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+@router.get("/api/v1/admin/register/export", dependencies=[Depends(verify_api_key)])
+async def export_register_results(
+    format: str = Query(default="json", regex="^(json|csv)$"),
+):
+    """导出注册结果"""
+    from app.services.register.task_manager import get_task_manager
+    from datetime import datetime
+
+    enabled = get_config("register.enabled", False)
+    if not enabled:
+        raise HTTPException(status_code=400, detail="注册功能未启用")
+
+    mgr = get_task_manager()
+    content = mgr.export_results(format)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"register_results_{timestamp}.{format}"
+
+    if format == "csv":
+        media_type = "text/csv"
+    else:
+        media_type = "application/json"
+
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@router.post("/api/v1/admin/register/clear", dependencies=[Depends(verify_api_key)])
+async def clear_register_results():
+    """清空注册结果"""
+    from app.services.register.task_manager import get_task_manager
+
+    enabled = get_config("register.enabled", False)
+    if not enabled:
+        raise HTTPException(status_code=400, detail="注册功能未启用")
+
+    mgr = get_task_manager()
+    mgr.clear_results()
+    return {"status": "success", "message": "结果已清空"}
+
+
+@router.get("/api/v1/admin/register/stream")
+async def stream_register_progress(request: Request):
+    """SSE 流式推送注册进度"""
+    from app.services.register.task_manager import get_task_manager
+
+    _verify_stream_api_key(request)
+
+    enabled = get_config("register.enabled", False)
+    if not enabled:
+        raise HTTPException(status_code=400, detail="注册功能未启用")
+
+    mgr = get_task_manager()
+
+    async def event_stream():
+        queue: asyncio.Queue = asyncio.Queue()
+
+        def on_event(event: str, data):
+            try:
+                queue.put_nowait({"event": event, "data": data})
+            except Exception:
+                pass
+
+        mgr.add_event_callback(on_event)
+        try:
+            # 发送初始状态
+            yield _sse_event({
+                "type": "snapshot",
+                "running": mgr.is_running,
+                "stats": mgr.stats.to_dict(),
+                "results_count": len(mgr.results),
+            })
+
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=15)
+                    yield _sse_event(event)
+
+                    # 任务完成时结束流
+                    if event.get("event") in ("task_completed", "task_stopped"):
+                        return
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"
+                    # 检查任务是否已结束
+                    if not mgr.is_running:
+                        yield _sse_event({"type": "done"})
+                        return
+        finally:
+            mgr.remove_event_callback(on_event)
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@router.get("/api/v1/admin/register/config", dependencies=[Depends(verify_api_key)])
+async def get_register_config():
+    """获取注册相关配置"""
+    return {
+        "enabled": get_config("register.enabled", False),
+        "mail_api_key": "***" if get_config("register.mail_api_key", "") else "",
+        "mail_domain": get_config("register.mail_domain", ""),
+        "mail_api_url": get_config("register.mail_api_url", ""),
+        "turnstile_solver_url": get_config("register.turnstile_solver_url", ""),
+        "turnstile_solver_threads": get_config("register.turnstile_solver_threads", 5),
+        "turnstile_headless": get_config("register.turnstile_headless", True),
+        "turnstile_timeout": get_config("register.turnstile_timeout", 60.0),
+        "register_concurrent": get_config("register.register_concurrent", 8),
+        "auto_import_tokens": get_config("register.auto_import_tokens", True),
     }
