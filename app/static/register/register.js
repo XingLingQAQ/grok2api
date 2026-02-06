@@ -14,21 +14,20 @@ let totalResults = 0;
 let results = [];
 
 // 初始化
-document.addEventListener('DOMContentLoaded', async () => {
-  apiKey = localStorage.getItem('api_key') || '';
-  if (!apiKey) {
-    window.location.href = '/admin';
-    return;
-  }
+async function init() {
+  apiKey = await ensureApiKey();
+  if (apiKey === null) return;
   await loadStatus();
   await loadResults();
-});
+}
+
+document.addEventListener('DOMContentLoaded', init);
 
 // 加载状态
 async function loadStatus() {
   try {
     const res = await fetch('/api/v1/admin/register/status', {
-      headers: { 'Authorization': `Bearer ${apiKey}` }
+      headers: buildAuthHeaders(apiKey)
     });
     if (!res.ok) throw new Error('Failed to load status');
     const data = await res.json();
@@ -109,7 +108,7 @@ async function startRegister() {
     const res = await fetch('/api/v1/admin/register/start', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${apiKey}`,
+        ...buildAuthHeaders(apiKey),
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ count, concurrent })
@@ -136,7 +135,7 @@ async function stopRegister() {
   try {
     const res = await fetch('/api/v1/admin/register/stop', {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}` }
+      headers: buildAuthHeaders(apiKey)
     });
 
     if (!res.ok) throw new Error('Stop failed');
@@ -159,7 +158,7 @@ async function clearResults() {
   try {
     const res = await fetch('/api/v1/admin/register/clear', {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}` }
+      headers: buildAuthHeaders(apiKey)
     });
 
     if (!res.ok) throw new Error('Clear failed');
@@ -180,7 +179,7 @@ async function clearResults() {
 async function loadResults() {
   try {
     const res = await fetch(`/api/v1/admin/register/results?page=${currentPage}&page_size=${pageSize}`, {
-      headers: { 'Authorization': `Bearer ${apiKey}` }
+      headers: buildAuthHeaders(apiKey)
     });
 
     if (!res.ok) throw new Error('Load results failed');
@@ -256,9 +255,16 @@ function changePageSize() {
   loadResults();
 }
 
+// 从 Bearer token 中提取实际的 api_key
+function extractApiKey() {
+  if (!apiKey) return '';
+  return apiKey.startsWith('Bearer ') ? apiKey.slice(7) : apiKey;
+}
+
 // 导出结果
 function exportResults(format) {
-  const url = `/api/v1/admin/register/export?format=${format}&api_key=${apiKey}`;
+  const key = extractApiKey();
+  const url = `/api/v1/admin/register/export?format=${format}&api_key=${key}`;
   window.open(url, '_blank');
 }
 
@@ -266,7 +272,8 @@ function exportResults(format) {
 function connectSSE() {
   if (eventSource) return;
 
-  const url = `/api/v1/admin/register/stream?api_key=${apiKey}`;
+  const key = extractApiKey();
+  const url = `/api/v1/admin/register/stream?api_key=${key}`;
   eventSource = new EventSource(url);
 
   eventSource.onmessage = (e) => {
