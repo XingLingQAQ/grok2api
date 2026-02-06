@@ -608,6 +608,12 @@ async def admin_proxy_page():
     return await render_template("proxy/proxy.html")
 
 
+@router.get("/admin/playground", response_class=HTMLResponse, include_in_schema=False)
+async def admin_playground_page():
+    """Playground 页"""
+    return await render_template("playground/playground.html")
+
+
 @router.get("/api/v1/admin/cache", dependencies=[Depends(verify_api_key)])
 async def get_cache_stats_api(request: Request):
     """获取缓存统计"""

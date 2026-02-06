@@ -9,6 +9,11 @@ let totalProxies = 0;
 let pollTimer = null;
 let pollType = null;
 
+// 按钮原始 HTML（用于恢复）
+const BTN_FETCH_HTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-6.219-8.56"></path></svg> 抓取代理`;
+const BTN_CHECK_HTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg> 测活`;
+const SPINNER_SVG = `<svg class="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-6.219-8.56"></path></svg>`;
+
 async function init() {
   apiKey = await ensureApiKey();
   if (apiKey === null) return;
@@ -36,11 +41,17 @@ async function loadStatus() {
     document.getElementById('stat-failed').textContent = failed;
     document.getElementById('stat-rate').textContent = `${rate}%`;
 
-    // 进度条
-    if (data.fetching && data.fetch_progress) {
-      updateProgress(data.fetch_progress, 'fetch');
-    } else if (data.checking && data.check_progress) {
-      updateProgress(data.check_progress, 'check');
+    // 如果页面加载时已在运行，自动启动轮询
+    if (data.fetching) {
+      setBtnLoading('btn-fetch', '抓取中...');
+      document.getElementById('btn-check').disabled = true;
+      if (data.fetch_progress) updateProgress(data.fetch_progress, 'fetch');
+      if (!pollTimer) startPoll('fetch');
+    } else if (data.checking) {
+      setBtnLoading('btn-check', '测活中...');
+      document.getElementById('btn-fetch').disabled = true;
+      if (data.check_progress) updateProgress(data.check_progress, 'check');
+      if (!pollTimer) startPoll('check');
     }
   } catch (e) {
     console.error('Load status error:', e);
@@ -157,10 +168,17 @@ function changePageSize() {
   loadProxies();
 }
 
+// 设置按钮 loading 状态
+function setBtnLoading(btnId, text) {
+  const btn = document.getElementById(btnId);
+  btn.disabled = true;
+  btn.innerHTML = `${SPINNER_SVG} ${text}`;
+}
+
 // 抓取代理
 async function fetchProxies() {
-  const btn = document.getElementById('btn-fetch');
-  btn.disabled = true;
+  setBtnLoading('btn-fetch', '抓取中...');
+  document.getElementById('btn-check').disabled = true;
 
   try {
     const res = await fetch('/api/v1/admin/proxy/fetch', {
@@ -172,14 +190,14 @@ async function fetchProxies() {
     startPoll('fetch');
   } catch (e) {
     showToast('抓取失败', 'error');
-    btn.disabled = false;
+    resetButtons();
   }
 }
 
 // 测活代理
 async function checkProxies() {
-  const btn = document.getElementById('btn-check');
-  btn.disabled = true;
+  setBtnLoading('btn-check', '测活中...');
+  document.getElementById('btn-fetch').disabled = true;
 
   try {
     const res = await fetch('/api/v1/admin/proxy/check', {
@@ -195,7 +213,7 @@ async function checkProxies() {
     startPoll('check');
   } catch (e) {
     showToast('测活失败', 'error');
-    btn.disabled = false;
+    resetButtons();
   }
 }
 
@@ -326,11 +344,16 @@ function updateProgress(progress, type) {
 
 function hideProgress() {
   document.getElementById('proxy-progress-container').classList.add('hidden');
+  document.getElementById('proxy-progress-fill').style.width = '0%';
 }
 
 function resetButtons() {
-  document.getElementById('btn-fetch').disabled = false;
-  document.getElementById('btn-check').disabled = false;
+  const btnFetch = document.getElementById('btn-fetch');
+  const btnCheck = document.getElementById('btn-check');
+  btnFetch.disabled = false;
+  btnFetch.innerHTML = BTN_FETCH_HTML;
+  btnCheck.disabled = false;
+  btnCheck.innerHTML = BTN_CHECK_HTML;
 }
 
 // 工具函数
@@ -353,7 +376,6 @@ function formatTime(isoStr) {
 function truncateSource(source) {
   if (!source) return '-';
   if (source === 'manual') return '手动';
-  // 从 URL 中提取仓库名
   const match = source.match(/github\.com\/([^/]+)/);
   return match ? match[1] : (source.length > 20 ? source.substring(0, 20) + '...' : source);
 }

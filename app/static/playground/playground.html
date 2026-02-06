@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Grok2API - Playground</title>
+  <link rel="icon" href="/static/favicon/favicon.ico">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/geist@1.0.0/dist/fonts/geist-sans/style.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/geist@1.0.0/dist/fonts/geist-mono/style.css" rel="stylesheet">
+  <link href="/static/common/common.css?v=3" rel="stylesheet">
+  <link href="/static/playground/playground.css?v=1" rel="stylesheet">
+  <link href="/static/common/toast.css" rel="stylesheet">
+</head>
+
+<body class="min-h-screen flex flex-col" style="background-color: var(--bg);">
+
+  <div id="toast-container" class="toast-container"></div>
+  <div id="app-header"></div>
+
+  <main class="flex-1 container mx-auto max-w-5xl px-6 py-8 fade-in flex flex-col" style="min-height: calc(100vh - 56px);">
+    <div class="flex flex-col flex-1">
+      <!-- Title + Controls -->
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h2 class="text-2xl font-semibold tracking-tight">Playground</h2>
+          <p class="text-[var(--accents-4)] mt-1 text-sm">OpenAI 兼容 Chat Completions 测试。</p>
+        </div>
+        <div class="flex items-center gap-3">
+          <div class="geist-select">
+            <select id="model-select">
+              <option value="grok-3">grok-3</option>
+            </select>
+          </div>
+          <label class="geist-switch">
+            <input type="checkbox" id="stream-toggle" checked>
+            <div class="geist-switch-track"><div class="geist-switch-thumb"></div></div>
+            <span class="geist-switch-label">Stream</span>
+          </label>
+          <button onclick="clearChat()" class="geist-button-outline gap-2 text-sm">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+            清空
+          </button>
+        </div>
+      </div>
+
+      <div class="h-px bg-[var(--border)] mb-4"></div>
+
+      <!-- Stats Bar -->
+      <div class="flex items-center gap-4 mb-4 text-xs text-[var(--accents-4)]">
+        <span>消息: <strong id="stat-messages" class="text-[var(--accents-6)]">0</strong></span>
+        <span>Tokens: <strong id="stat-tokens" class="text-[var(--accents-6)]">-</strong></span>
+        <span>耗时: <strong id="stat-duration" class="text-[var(--accents-6)]">-</strong></span>
+      </div>
+
+      <!-- Chat Area -->
+      <div class="chat-container flex-1" id="chat-container">
+        <div class="chat-messages" id="chat-messages">
+          <div class="chat-empty" id="chat-empty">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--accents-3)" stroke-width="1.5">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+            <p>输入消息开始对话</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Input Area -->
+      <div class="chat-input-area">
+        <div class="chat-input-wrapper">
+          <textarea id="chat-input" class="chat-textarea" placeholder="输入消息... (Enter 发送, Shift+Enter 换行)" rows="1"></textarea>
+          <button id="btn-send" onclick="sendMessage()" class="chat-send-btn" title="发送">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="22" y1="2" x2="11" y2="13"></line>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </main>
+  <div id="app-footer"></div>
+
+  <script src="/static/common/admin-auth.js?v=2"></script>
+  <script src="/static/common/header.js?v=2"></script>
+  <script src="/static/common/footer.js?v=1"></script>
+  <script src="/static/common/toast.js"></script>
+  <script src="/static/playground/playground.js?v=1"></script>
+</body>
+
+</html>
