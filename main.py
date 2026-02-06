@@ -47,6 +47,19 @@ async def lifespan(app: FastAPI):
 
     await config.load()
 
+    # 1.5 初始化持久化数据（代理池 + 注册结果）
+    try:
+        from app.services.proxy.pool import get_proxy_pool
+        await get_proxy_pool().init()
+    except Exception as e:
+        logger.warning(f"Failed to init ProxyPool: {e}")
+
+    try:
+        from app.services.register.task_manager import get_task_manager
+        await get_task_manager().init()
+    except Exception as e:
+        logger.warning(f"Failed to init TaskManager: {e}")
+
     # 2. 启动服务显示
     logger.info("Starting Grok2API...")
     logger.info(f"Platform: {platform.system()} {platform.release()}")

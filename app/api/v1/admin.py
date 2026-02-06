@@ -1395,7 +1395,7 @@ async def clear_register_results():
         raise HTTPException(status_code=400, detail="注册功能未启用")
 
     mgr = get_task_manager()
-    mgr.clear_results()
+    await mgr.clear_results()
     return {"status": "success", "message": "结果已清空"}
 
 
@@ -1568,7 +1568,7 @@ async def clear_proxies():
     from app.services.proxy import get_proxy_pool
 
     pool = get_proxy_pool()
-    pool.clear()
+    await pool.clear()
     return {"status": "success", "message": "代理池已清空"}
 
 

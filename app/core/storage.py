@@ -32,6 +32,8 @@ from app.core.logger import logger
 # 配置文件路径
 CONFIG_FILE = Path(__file__).parent.parent.parent / "data" / "config.toml"
 TOKEN_FILE = Path(__file__).parent.parent.parent / "data" / "token.json"
+PROXY_FILE = Path(__file__).parent.parent.parent / "data" / "proxies.json"
+REGISTER_RESULTS_FILE = Path(__file__).parent.parent.parent / "data" / "register_results.json"
 LOCK_DIR = Path(__file__).parent.parent.parent / "data" / ".locks"
 
 
@@ -71,6 +73,26 @@ class BaseStorage(abc.ABC):
     @abc.abstractmethod
     async def save_tokens(self, data: Dict[str, Any]):
         """保存所有 Token"""
+        pass
+
+    @abc.abstractmethod
+    async def load_proxies(self) -> list:
+        """加载代理列表"""
+        pass
+
+    @abc.abstractmethod
+    async def save_proxies(self, data: list):
+        """保存代理列表（全量覆盖）"""
+        pass
+
+    @abc.abstractmethod
+    async def load_register_results(self) -> list:
+        """加载注册结果列表"""
+        pass
+
+    @abc.abstractmethod
+    async def save_register_results(self, data: list):
+        """保存注册结果列表（全量覆盖）"""
         pass
 
     @abc.abstractmethod
@@ -221,6 +243,50 @@ class LocalStorage(BaseStorage):
         except Exception as e:
             logger.error(f"LocalStorage: 保存 Token 失败: {e}")
             raise StorageError(f"保存 Token 失败: {e}")
+
+    async def load_proxies(self) -> list:
+        if not PROXY_FILE.exists():
+            return []
+        try:
+            async with aiofiles.open(PROXY_FILE, "rb") as f:
+                content = await f.read()
+                return json_loads(content) if content.strip() else []
+        except Exception as e:
+            logger.error(f"LocalStorage: 加载代理失败: {e}")
+            return []
+
+    async def save_proxies(self, data: list):
+        try:
+            PROXY_FILE.parent.mkdir(parents=True, exist_ok=True)
+            temp_path = PROXY_FILE.with_suffix(".tmp")
+            async with aiofiles.open(temp_path, "wb") as f:
+                await f.write(orjson.dumps(data, option=orjson.OPT_INDENT_2))
+            os.replace(temp_path, PROXY_FILE)
+        except Exception as e:
+            logger.error(f"LocalStorage: 保存代理失败: {e}")
+            raise StorageError(f"保存代理失败: {e}")
+
+    async def load_register_results(self) -> list:
+        if not REGISTER_RESULTS_FILE.exists():
+            return []
+        try:
+            async with aiofiles.open(REGISTER_RESULTS_FILE, "rb") as f:
+                content = await f.read()
+                return json_loads(content) if content.strip() else []
+        except Exception as e:
+            logger.error(f"LocalStorage: 加载注册结果失败: {e}")
+            return []
+
+    async def save_register_results(self, data: list):
+        try:
+            REGISTER_RESULTS_FILE.parent.mkdir(parents=True, exist_ok=True)
+            temp_path = REGISTER_RESULTS_FILE.with_suffix(".tmp")
+            async with aiofiles.open(temp_path, "wb") as f:
+                await f.write(orjson.dumps(data, option=orjson.OPT_INDENT_2))
+            os.replace(temp_path, REGISTER_RESULTS_FILE)
+        except Exception as e:
+            logger.error(f"LocalStorage: 保存注册结果失败: {e}")
+            raise StorageError(f"保存注册结果失败: {e}")
 
     async def close(self):
         pass
@@ -476,6 +542,36 @@ class RedisStorage(BaseStorage):
             logger.error(f"RedisStorage: 保存 Token 失败: {e}")
             raise
 
+    async def load_proxies(self) -> list:
+        try:
+            raw = await self.redis.get("grok2api:proxies")
+            return json_loads(raw) if raw else []
+        except Exception as e:
+            logger.error(f"RedisStorage: 加载代理失败: {e}")
+            return []
+
+    async def save_proxies(self, data: list):
+        try:
+            await self.redis.set("grok2api:proxies", json_dumps(data))
+        except Exception as e:
+            logger.error(f"RedisStorage: 保存代理失败: {e}")
+            raise
+
+    async def load_register_results(self) -> list:
+        try:
+            raw = await self.redis.get("grok2api:register_results")
+            return json_loads(raw) if raw else []
+        except Exception as e:
+            logger.error(f"RedisStorage: 加载注册结果失败: {e}")
+            return []
+
+    async def save_register_results(self, data: list):
+        try:
+            await self.redis.set("grok2api:register_results", json_dumps(data))
+        except Exception as e:
+            logger.error(f"RedisStorage: 保存注册结果失败: {e}")
+            raise
+
     async def close(self):
         try:
             await self.redis.close()
@@ -545,6 +641,36 @@ class SQLStorage(BaseStorage):
                     )
                 """)
                 )
+
+                # 代理表
+                await conn.execute(
+                    text("""
+                    CREATE TABLE IF NOT EXISTS proxies (
+                        proxy VARCHAR(256) PRIMARY KEY,
+                        data TEXT
+                    )
+                """)
+                )
+
+                # 注册结果表
+                if self.dialect in ("mysql", "mariadb"):
+                    await conn.execute(
+                        text("""
+                        CREATE TABLE IF NOT EXISTS register_results (
+                            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                            data TEXT
+                        )
+                    """)
+                    )
+                else:
+                    await conn.execute(
+                        text("""
+                        CREATE TABLE IF NOT EXISTS register_results (
+                            id BIGSERIAL PRIMARY KEY,
+                            data TEXT
+                        )
+                    """)
+                    )
 
                 # 索引
                 try:
@@ -748,6 +874,85 @@ class SQLStorage(BaseStorage):
                 await session.commit()
         except Exception as e:
             logger.error(f"SQLStorage: 保存 Token 失败: {e}")
+            raise
+
+    async def load_proxies(self) -> list:
+        await self._ensure_schema()
+        from sqlalchemy import text
+
+        try:
+            async with self.async_session() as session:
+                res = await session.execute(text("SELECT proxy, data FROM proxies"))
+                rows = res.fetchall()
+                if not rows:
+                    return []
+                result = []
+                for _, data_json in rows:
+                    try:
+                        result.append(json_loads(data_json) if isinstance(data_json, str) else data_json)
+                    except Exception:
+                        pass
+                return result
+        except Exception as e:
+            logger.error(f"SQLStorage: 加载代理失败: {e}")
+            return []
+
+    async def save_proxies(self, data: list):
+        await self._ensure_schema()
+        from sqlalchemy import text
+
+        try:
+            async with self.async_session() as session:
+                await session.execute(text("DELETE FROM proxies"))
+                for item in data:
+                    proxy_key = item.get("proxy", "") if isinstance(item, dict) else str(item)
+                    await session.execute(
+                        text("INSERT INTO proxies (proxy, data) VALUES (:proxy, :data)"),
+                        {"proxy": proxy_key, "data": json_dumps(item)},
+                    )
+                await session.commit()
+        except Exception as e:
+            logger.error(f"SQLStorage: 保存代理失败: {e}")
+            raise
+
+    async def load_register_results(self) -> list:
+        await self._ensure_schema()
+        from sqlalchemy import text
+
+        try:
+            async with self.async_session() as session:
+                res = await session.execute(
+                    text("SELECT data FROM register_results ORDER BY id")
+                )
+                rows = res.fetchall()
+                if not rows:
+                    return []
+                result = []
+                for (data_json,) in rows:
+                    try:
+                        result.append(json_loads(data_json) if isinstance(data_json, str) else data_json)
+                    except Exception:
+                        pass
+                return result
+        except Exception as e:
+            logger.error(f"SQLStorage: 加载注册结果失败: {e}")
+            return []
+
+    async def save_register_results(self, data: list):
+        await self._ensure_schema()
+        from sqlalchemy import text
+
+        try:
+            async with self.async_session() as session:
+                await session.execute(text("DELETE FROM register_results"))
+                for item in data:
+                    await session.execute(
+                        text("INSERT INTO register_results (data) VALUES (:data)"),
+                        {"data": json_dumps(item)},
+                    )
+                await session.commit()
+        except Exception as e:
+            logger.error(f"SQLStorage: 保存注册结果失败: {e}")
             raise
 
     async def close(self):

@@ -15,6 +15,7 @@ import httpx
 
 from app.core.config import get_config
 from app.core.logger import logger
+from app.core.storage import get_storage
 
 
 @dataclass
@@ -68,6 +69,9 @@ class ProxyPool:
         # 进度追踪
         self._fetch_progress: Dict[str, Any] = {"done": 0, "total": 0, "new": 0}
         self._check_progress: Dict[str, Any] = {"done": 0, "total": 0, "alive": 0}
+        # 持久化防抖
+        self._save_pending = False
+        self._flush_task: Optional[asyncio.Task] = None
 
     @property
     def total_count(self) -> int:
@@ -125,6 +129,54 @@ class ProxyPool:
         import random
         return random.choice(self._alive_proxies)
 
+    async def init(self):
+        """从存储加载代理数据"""
+        try:
+            storage = get_storage()
+            items = await storage.load_proxies()
+            for item in items:
+                proxy_str = item.get("proxy", "")
+                if not proxy_str:
+                    continue
+                info = ProxyInfo(
+                    proxy=proxy_str,
+                    alive=item.get("alive", False),
+                    latency=item.get("latency", 0.0),
+                    last_check=item.get("last_check"),
+                    fail_count=item.get("fail_count", 0),
+                    source=item.get("source", ""),
+                )
+                self._proxies[proxy_str] = info
+                if info.alive:
+                    self._alive_proxies.append(proxy_str)
+            self._alive_proxies.sort(key=lambda p: self._proxies[p].latency)
+            logger.info(f"ProxyPool: 从存储加载 {len(self._proxies)} 个代理")
+        except Exception as e:
+            logger.warning(f"ProxyPool: 加载代理失败: {e}")
+
+    async def _save(self):
+        """立即保存到存储"""
+        self._save_pending = False
+        try:
+            data = [info.to_dict() for info in self._proxies.values()]
+            storage = get_storage()
+            await storage.save_proxies(data)
+        except Exception as e:
+            logger.error(f"ProxyPool: 保存代理失败: {e}")
+
+    def _schedule_save(self):
+        """防抖保存（0.5s 延迟合并写入）"""
+        self._save_pending = True
+        if self._flush_task is None or self._flush_task.done():
+            self._flush_task = asyncio.create_task(self._flush_loop())
+
+    async def _flush_loop(self):
+        """防抖落盘循环"""
+        while self._save_pending:
+            await asyncio.sleep(0.5)
+            if self._save_pending:
+                await self._save()
+
     async def fetch_proxies(self) -> int:
         """从源抓取代理"""
         if self._fetching:
@@ -157,6 +209,7 @@ class ProxyPool:
 
             self._last_fetch = datetime.now().isoformat()
             logger.info(f"代理抓取完成: 新增 {new_count}, 总计 {self.total_count}")
+            self._schedule_save()
 
         except Exception as e:
             logger.error(f"代理抓取异常: {e}")
@@ -226,6 +279,7 @@ class ProxyPool:
 
             self._last_check = datetime.now().isoformat()
             logger.info(f"代理测活完成: 存活 {alive_count}/{total}")
+            self._schedule_save()
 
         except Exception as e:
             logger.error(f"代理测活异常: {e}")
@@ -267,10 +321,11 @@ class ProxyPool:
 
             return False
 
-    def clear(self) -> None:
+    async def clear(self) -> None:
         """清空代理池"""
         self._proxies.clear()
         self._alive_proxies.clear()
+        await self._save()
         logger.info("代理池已清空")
 
     def add_proxy(self, proxy: str) -> bool:
@@ -284,6 +339,7 @@ class ProxyPool:
 
         if proxy not in self._proxies:
             self._proxies[proxy] = ProxyInfo(proxy=proxy, source="manual")
+            self._schedule_save()
             return True
         return False
 
@@ -293,6 +349,7 @@ class ProxyPool:
             del self._proxies[proxy]
             if proxy in self._alive_proxies:
                 self._alive_proxies.remove(proxy)
+            self._schedule_save()
             return True
         return False
 

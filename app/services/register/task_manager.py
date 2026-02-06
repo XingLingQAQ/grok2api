@@ -15,6 +15,7 @@ import uuid
 
 from app.core.config import get_config
 from app.core.logger import logger
+from app.core.storage import get_storage
 from app.services.register.grok_register import GrokRegister, RegisterResult
 
 
@@ -61,6 +62,9 @@ class TaskManager:
         self._event_callbacks: List[Callable[[str, Any], None]] = []
         self._registrars: List[GrokRegister] = []
         self._mode: str = "normal"  # normal 或 nsfw
+        # 持久化防抖
+        self._save_pending = False
+        self._flush_task: Optional[asyncio.Task] = None
 
     @property
     def task_id(self) -> Optional[str]:
@@ -81,6 +85,47 @@ class TaskManager:
     def is_running(self) -> bool:
         """任务是否正在运行"""
         return self._stats.running
+
+    async def init(self):
+        """从存储加载注册结果"""
+        try:
+            storage = get_storage()
+            items = await storage.load_register_results()
+            for item in items:
+                self._results.append(RegisterTaskResult(
+                    email=item.get("email", ""),
+                    password=item.get("password", ""),
+                    sso_token=item.get("sso_token"),
+                    success=item.get("success", False),
+                    error=item.get("error"),
+                    created_at=item.get("created_at", ""),
+                ))
+            logger.info(f"TaskManager: 从存储加载 {len(self._results)} 条注册结果")
+        except Exception as e:
+            logger.warning(f"TaskManager: 加载注册结果失败: {e}")
+
+    async def _save(self):
+        """立即保存到存储"""
+        self._save_pending = False
+        try:
+            data = [r.to_dict() for r in self._results]
+            storage = get_storage()
+            await storage.save_register_results(data)
+        except Exception as e:
+            logger.error(f"TaskManager: 保存注册结果失败: {e}")
+
+    def _schedule_save(self):
+        """防抖保存（1.0s 延迟合并写入）"""
+        self._save_pending = True
+        if self._flush_task is None or self._flush_task.done():
+            self._flush_task = asyncio.create_task(self._flush_loop())
+
+    async def _flush_loop(self):
+        """防抖落盘循环"""
+        while self._save_pending:
+            await asyncio.sleep(1.0)
+            if self._save_pending:
+                await self._save()
 
     def add_event_callback(self, callback: Callable[[str, Any], None]) -> None:
         """添加事件回调"""
@@ -214,6 +259,7 @@ class TaskManager:
         finally:
             self._stats.running = False
             self._stats.end_time = datetime.now().isoformat()
+            await self._save()
             self._emit_event("task_completed", {
                 "task_id": self._task_id,
                 "stats": self._stats.to_dict(),
@@ -259,6 +305,7 @@ class TaskManager:
             "result": task_result.to_dict(),
             "stats": self._stats.to_dict(),
         })
+        self._schedule_save()
 
     async def _enable_nsfw(self, sso_token: str) -> None:
         """为 Token 开启 NSFW 模式"""
@@ -284,9 +331,10 @@ class TaskManager:
         except Exception as e:
             logger.warning(f"Token 自动导入失败: {e}")
 
-    def clear_results(self) -> None:
+    async def clear_results(self) -> None:
         """清空结果列表"""
         self._results.clear()
+        await self._save()
         self._emit_event("results_cleared", None)
 
     def export_results(self, format: str = "json") -> str:
