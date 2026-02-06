@@ -299,8 +299,7 @@ class ProxyPool:
 
             start_time = time.time()
             try:
-                proxies = {"http://": proxy_str, "https://": proxy_str}
-                async with httpx.AsyncClient(proxies=proxies, timeout=TEST_TIMEOUT) as client:
+                async with httpx.AsyncClient(proxy=proxy_str, timeout=TEST_TIMEOUT) as client:
                     response = await client.get(TEST_URL)
                     if response.status_code == 200:
                         latency = (time.time() - start_time) * 1000
