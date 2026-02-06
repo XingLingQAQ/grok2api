@@ -50,3 +50,20 @@ usage_max_tokens = 1000
 nsfw_max_concurrent = 10
 nsfw_batch_size = 50
 nsfw_max_tokens = 1000
+
+[register]
+# 是否启用注册功能（启用后会初始化浏览器池）
+enabled = false
+# 邮箱服务配置
+mail_api_key = ""
+mail_domain = ""
+mail_api_url = "https://mail.xingling.one"
+# Turnstile Solver 配置
+turnstile_solver_url = "http://127.0.0.1:5072"
+turnstile_solver_threads = 5
+turnstile_headless = true
+turnstile_timeout = 60.0
+# 注册并发数
+register_concurrent = 8
+# 注册成功后自动导入 Token 到 Token 管理
+auto_import_tokens = true
