@@ -1462,6 +1462,40 @@ async def get_register_config():
     }
 
 
+# ==================== 自动注册管理 ====================
+
+
+@router.get("/api/v1/admin/register/auto/status", dependencies=[Depends(verify_api_key)])
+async def get_auto_register_status():
+    """获取自动注册调度器状态"""
+    from app.services.register.auto_scheduler import get_auto_register_scheduler
+
+    scheduler = get_auto_register_scheduler()
+    return scheduler.get_status()
+
+
+@router.post("/api/v1/admin/register/auto/trigger", dependencies=[Depends(verify_api_key)])
+async def trigger_auto_register():
+    """手动触发一次自动注册"""
+    from app.services.register.auto_scheduler import get_auto_register_scheduler
+    from app.services.register.task_manager import get_task_manager
+
+    enabled = get_config("register.enabled", False)
+    if not enabled:
+        raise HTTPException(status_code=400, detail="注册功能未启用")
+
+    mgr = get_task_manager()
+    if mgr.is_running:
+        raise HTTPException(status_code=400, detail="已有注册任务运行中")
+
+    scheduler = get_auto_register_scheduler()
+    task_id = await scheduler.trigger_manual()
+    if not task_id:
+        raise HTTPException(status_code=400, detail="触发失败")
+
+    return {"status": "success", "task_id": task_id}
+
+
 # ==================== 代理池管理 ====================
 
 
