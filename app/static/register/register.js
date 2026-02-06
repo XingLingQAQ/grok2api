@@ -395,10 +395,3 @@ function formatTime(isoStr) {
   }
 }
 
-function showToast(message, type = 'info') {
-  if (typeof window.showToast === 'function') {
-    window.showToast(message, type);
-  } else {
-    console.log(`[${type}] ${message}`);
-  }
-}

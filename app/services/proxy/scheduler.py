@@ -17,6 +17,7 @@ class ProxyScheduler:
         self._task: Optional[asyncio.Task] = None
         self._last_fetch_ts: float = 0
         self._last_check_ts: float = 0
+        self._last_threshold_ts: float = 0  # 阈值触发冷却
 
     @property
     def is_running(self) -> bool:
@@ -88,17 +89,23 @@ class ProxyScheduler:
                     await pool.check_proxies(concurrent)
                     self._last_check_ts = time.time()
 
-        # 阈值触发
+        # 阈值触发（带冷却：至少间隔 10 分钟）
         threshold = get_config("proxy.alive_threshold", 0)
+        threshold_cooldown = 600  # 10 分钟
         if threshold > 0 and pool.alive_count < threshold and not did_fetch:
-            if not pool.is_fetching:
-                logger.info(f"ProxyScheduler: alive threshold triggered ({pool.alive_count}<{threshold})")
-                await pool.fetch_proxies()
-                self._last_fetch_ts = time.time()
-            if not pool.is_checking:
-                concurrent = get_config("proxy.check_concurrent", 100)
-                await pool.check_proxies(concurrent)
-                self._last_check_ts = time.time()
+            if (now - self._last_threshold_ts) >= threshold_cooldown:
+                self._last_threshold_ts = time.time()
+                if not pool.is_fetching:
+                    logger.info(f"ProxyScheduler: alive threshold triggered ({pool.alive_count}<{threshold})")
+                    await pool.fetch_proxies()
+                    self._last_fetch_ts = time.time()
+                if not pool.is_checking:
+                    concurrent = get_config("proxy.check_concurrent", 100)
+                    await pool.check_proxies(concurrent)
+                    self._last_check_ts = time.time()
+            else:
+                remaining = int(threshold_cooldown - (now - self._last_threshold_ts))
+                logger.debug(f"ProxyScheduler: threshold cooldown, {remaining}s remaining")
 
 
 _proxy_scheduler: Optional[ProxyScheduler] = None

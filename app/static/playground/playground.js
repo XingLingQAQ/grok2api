@@ -442,10 +442,3 @@ function escapeHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function showToast(message, type = 'info') {
-  if (typeof window.showToast === 'function') {
-    window.showToast(message, type);
-  } else {
-    console.log(`[${type}] ${message}`);
-  }
-}

@@ -383,10 +383,3 @@ function truncateSource(source) {
   return match ? match[1] : (source.length > 20 ? source.substring(0, 20) + '...' : source);
 }
 
-function showToast(message, type = 'info') {
-  if (typeof window.showToast === 'function') {
-    window.showToast(message, type);
-  } else {
-    console.log(`[${type}] ${message}`);
-  }
-}
