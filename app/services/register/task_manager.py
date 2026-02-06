@@ -240,6 +240,9 @@ class TaskManager:
 
         if result.success:
             self._stats.success += 1
+            # 自动导入 Token
+            if result.sso_token and get_config("register.auto_import_tokens", True):
+                await self._auto_import_token(result.sso_token)
         else:
             self._stats.failed += 1
 
@@ -248,6 +251,16 @@ class TaskManager:
             "result": task_result.to_dict(),
             "stats": self._stats.to_dict(),
         })
+
+    async def _auto_import_token(self, sso_token: str) -> None:
+        """自动导入 Token 到 Token 管理"""
+        try:
+            from app.services.token.manager import get_token_manager
+            mgr = await get_token_manager()
+            await mgr.add_token(sso_token, pool="ssoBasic")
+            logger.debug(f"Token 自动导入成功: {sso_token[:20]}...")
+        except Exception as e:
+            logger.warning(f"Token 自动导入失败: {e}")
 
     def clear_results(self) -> None:
         """清空结果列表"""
