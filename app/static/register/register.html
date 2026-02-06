@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Grok2API - 注册管理</title>
+  <link rel="icon" href="/static/favicon/favicon.ico">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/geist@1.0.0/dist/fonts/geist-sans/style.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/geist@1.0.0/dist/fonts/geist-mono/style.css" rel="stylesheet">
+  <link href="/static/common/common.css?v=2" rel="stylesheet">
+  <link href="/static/register/register.css?v=1" rel="stylesheet">
+  <link href="/static/common/toast.css" rel="stylesheet">
+</head>
+
+<body class="min-h-screen flex flex-col" style="background-color: var(--bg);">
+
+  <div id="toast-container" class="toast-container"></div>
+  <div id="app-header"></div>
+
+  <main class="space-y-6 flex-1 container mx-auto max-w-5xl px-6 py-8 fade-in">
+    <div class="space-y-6">
+      <div class="flex justify-between items-center">
+        <div>
+          <h2 class="text-2xl font-semibold tracking-tight">注册管理</h2>
+          <p class="text-[var(--accents-4)] mt-1 text-sm">批量注册 Grok 账号并获取 SSO Token。</p>
+        </div>
+        <div class="flex items-center gap-3">
+          <button onclick="exportResults('json')" class="geist-button-outline gap-2" id="btn-export-json">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            导出 JSON
+          </button>
+          <button onclick="exportResults('csv')" class="geist-button-outline gap-2" id="btn-export-csv">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            导出 CSV
+          </button>
+        </div>
+      </div>
+
+      <div class="h-px bg-[var(--border)] my-6"></div>
+
+      <!-- Status Banner -->
+      <div id="status-banner" class="status-banner status-disabled">
+        <span id="status-text">注册功能未启用</span>
+      </div>
+
+      <!-- Statistics -->
+      <div class="grid grid-cols-4 gap-4 mb-6" id="stats-container">
+        <div class="stat-card">
+          <div class="stat-value" id="stat-total">0</div>
+          <div class="stat-label">计划注册</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value text-green-600" id="stat-success">0</div>
+          <div class="stat-label">注册成功</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value text-red-600" id="stat-failed">0</div>
+          <div class="stat-label">注册失败</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value text-blue-600" id="stat-results">0</div>
+          <div class="stat-label">结果总数</div>
+        </div>
+      </div>
+
+      <!-- Control Panel -->
+      <div class="control-panel">
+        <div class="control-row">
+          <div class="control-item">
+            <label class="control-label">注册数量</label>
+            <input type="number" id="input-count" class="geist-input" value="1" min="1" max="100">
+          </div>
+          <div class="control-item">
+            <label class="control-label">并发数</label>
+            <input type="number" id="input-concurrent" class="geist-input" value="8" min="1" max="20">
+          </div>
+          <div class="control-actions">
+            <button onclick="startRegister()" class="geist-button gap-2" id="btn-start">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+              </svg>
+              开始注册
+            </button>
+            <button onclick="stopRegister()" class="geist-button-danger gap-2" id="btn-stop" disabled>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="6" y="6" width="12" height="12"></rect>
+              </svg>
+              停止
+            </button>
+            <button onclick="clearResults()" class="geist-button-outline gap-2" id="btn-clear">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+              </svg>
+              清空结果
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Progress Bar -->
+      <div id="progress-container" class="progress-container hidden">
+        <div class="progress-bar">
+          <div class="progress-fill" id="progress-fill" style="width: 0%"></div>
+        </div>
+        <div class="progress-text" id="progress-text">0 / 0</div>
+      </div>
+
+      <!-- Results Table -->
+      <div class="rounded-lg overflow-hidden bg-white mb-4 overflow-x-auto">
+        <table class="geist-table min-w-[800px]">
+          <thead>
+            <tr>
+              <th class="w-12">#</th>
+              <th class="text-left">邮箱</th>
+              <th class="w-32">密码</th>
+              <th class="w-48">SSO Token</th>
+              <th class="w-20">状态</th>
+              <th class="text-left">错误信息</th>
+              <th class="w-40">时间</th>
+            </tr>
+          </thead>
+          <tbody id="results-table-body">
+          </tbody>
+        </table>
+        <div id="loading" class="text-center py-12 text-[var(--accents-4)] hidden">加载中...</div>
+        <div id="empty-state" class="table-empty">
+          暂无注册结果，请点击"开始注册"按钮。
+        </div>
+      </div>
+
+      <!-- Pagination -->
+      <div class="pagination-bar">
+        <div id="pagination-info" class="text-xs text-[var(--accents-5)]">第 0 / 0 页 · 共 0 条</div>
+        <div class="flex items-center gap-2">
+          <button id="page-prev" class="geist-button-outline text-xs px-3" onclick="goPrevPage()">上一页</button>
+          <button id="page-next" class="geist-button-outline text-xs px-3" onclick="goNextPage()">下一页</button>
+          <select id="page-size" class="geist-input h-[30px]" onchange="changePageSize()">
+            <option value="20">20 / 页</option>
+            <option value="50" selected>50 / 页</option>
+            <option value="100">100 / 页</option>
+          </select>
+        </div>
+      </div>
+
+    </div>
+  </main>
+  <div id="app-footer"></div>
+
+  <script src="/static/common/admin-auth.js?v=2"></script>
+  <script src="/static/common/header.js?v=2"></script>
+  <script src="/static/common/footer.js?v=1"></script>
+  <script src="/static/common/toast.js"></script>
+  <script src="/static/register/register.js?v=1"></script>
+</body>
+
+</html>
