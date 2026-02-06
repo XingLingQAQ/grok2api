@@ -20,7 +20,7 @@ stream_idle_timeout = 45.0
 video_idle_timeout = 90.0
 
 [app]
-app_url = "http://127.0.0.1:8000"
+app_url = "http://127.0.0.1:6683"
 app_key = "grok2api"
 api_key = ""
 image_format = "url"
@@ -55,8 +55,8 @@ nsfw_max_tokens = 1000
 # 是否启用注册功能（启用后会初始化浏览器池）
 enabled = false
 # 邮箱服务配置
-mail_api_key = ""
-mail_domain = ""
+mail_api_key = "mk_dZvkBRJYNqMnhupv7C-OBa17k6cPzOgP"
+mail_domain = "669698.xyz"
 mail_api_url = "https://mail.xingling.one"
 # Turnstile Solver 配置
 turnstile_solver_url = "http://127.0.0.1:5072"
@@ -67,3 +67,5 @@ turnstile_timeout = 60.0
 register_concurrent = 8
 # 注册成功后自动导入 Token 到 Token 管理
 auto_import_tokens = true
+
+
