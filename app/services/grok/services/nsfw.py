@@ -38,7 +38,9 @@ class NSFWService:
     """NSFW 模式服务"""
 
     def __init__(self, proxy: str = None):
-        self.proxy = proxy or get_config("grok.base_proxy_url", "")
+        if proxy is None:
+            proxy = get_config("grok.base_proxy_url", "")
+        self.proxy = proxy
 
     def _build_headers(self, token: str) -> dict:
         """构造 gRPC-Web 请求头"""
@@ -81,6 +83,7 @@ class NSFWService:
             payload.hex(),
         )
         proxies = {"http": self.proxy, "https": self.proxy} if self.proxy else None
+        logger.debug(f"NSFW request: proxy={self.proxy!r}, proxies={proxies!r}")
 
         try:
             async with AsyncSession(impersonate=BROWSER) as session:
