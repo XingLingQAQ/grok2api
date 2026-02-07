@@ -314,14 +314,14 @@ class TaskManager:
             from app.services.proxy import get_effective_proxy
 
             proxy = get_effective_proxy()
-            logger.debug(f"NSFW 启用: proxy={proxy!r}")
+            logger.warning(f"NSFW 启用: proxy={proxy!r}")
             service = NSFWService(proxy=proxy)
             result = await service.enable(sso_token)
 
-            # 失败时切换策略重试：有代理→直连，无代理→仍直连（不同实例）
+            # 失败时切换策略重试
             if not result.success:
-                logger.debug(f"NSFW 首次失败(proxy={proxy!r}): {result.error or result.grpc_message}")
-                service_retry = NSFWService(proxy="" if proxy else None)
+                logger.warning(f"NSFW 首次失败(proxy={proxy!r}): {result.error or result.grpc_message}")
+                service_retry = NSFWService(proxy="")
                 result = await service_retry.enable(sso_token)
 
             if result.success:

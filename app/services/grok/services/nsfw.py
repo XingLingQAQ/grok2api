@@ -83,7 +83,7 @@ class NSFWService:
             payload.hex(),
         )
         proxy_arg = self.proxy if self.proxy else ""
-        logger.debug(f"NSFW request: proxy={proxy_arg!r}")
+        logger.warning(f"NSFW request: proxy_arg={proxy_arg!r}, self.proxy={self.proxy!r}")
 
         try:
             async with AsyncSession(impersonate=BROWSER) as session:
