@@ -245,7 +245,7 @@ class ProxyPool:
         return proxies
 
     async def check_proxies(self, max_concurrent: int = 100) -> int:
-        """测活所有代理"""
+        """测活所有代理（分批执行，避免阻塞事件循环）"""
         if self._checking:
             return 0
 
@@ -257,26 +257,28 @@ class ProxyPool:
         self._check_progress = {"done": 0, "total": total, "alive": 0}
 
         try:
-            semaphore = asyncio.Semaphore(max_concurrent)
+            # 分批处理，每批 max_concurrent 个
+            for batch_start in range(0, total, max_concurrent):
+                batch = proxy_keys[batch_start:batch_start + max_concurrent]
 
-            async def _check_and_track(proxy_str: str):
-                nonlocal done, alive_count
-                result = await self._check_single_proxy(semaphore, proxy_str)
-                done += 1
-                if result:
-                    alive_count += 1
+                results = await asyncio.gather(
+                    *[self._check_single_proxy(p) for p in batch],
+                    return_exceptions=True,
+                )
+
+                for r in results:
+                    done += 1
+                    if r is True:
+                        alive_count += 1
                 self._check_progress = {"done": done, "total": total, "alive": alive_count}
 
-            tasks = [_check_and_track(p) for p in proxy_keys]
-            await asyncio.gather(*tasks, return_exceptions=True)
+                # 批间让出事件循环，确保 HTTP 请求能被处理
+                await asyncio.sleep(0)
 
             # 更新存活列表
-            self._alive_proxies = []
-            for proxy_str, info in self._proxies.items():
-                if info.alive:
-                    self._alive_proxies.append(proxy_str)
-
-            # 按延迟排序
+            self._alive_proxies = [
+                p for p, info in self._proxies.items() if info.alive
+            ]
             self._alive_proxies.sort(key=lambda p: self._proxies[p].latency)
 
             self._last_check = datetime.now().isoformat()
@@ -290,37 +292,36 @@ class ProxyPool:
 
         return alive_count
 
-    async def _check_single_proxy(self, semaphore: asyncio.Semaphore, proxy_str: str) -> bool:
+    async def _check_single_proxy(self, proxy_str: str) -> bool:
         """测试单个代理"""
-        async with semaphore:
-            info = self._proxies.get(proxy_str)
-            if not info:
-                return False
-
-            start_time = time.time()
-            try:
-                async with httpx.AsyncClient(proxy=proxy_str, timeout=TEST_TIMEOUT) as client:
-                    response = await client.get(TEST_URL)
-                    if response.status_code == 200:
-                        latency = (time.time() - start_time) * 1000
-                        info.alive = True
-                        info.latency = round(latency, 2)
-                        info.last_check = datetime.now().isoformat()
-                        info.fail_count = 0
-                        return True
-
-            except Exception:
-                pass
-
-            info.alive = False
-            info.fail_count += 1
-            info.last_check = datetime.now().isoformat()
-
-            # 失败次数过多则移除
-            if info.fail_count >= 3:
-                del self._proxies[proxy_str]
-
+        info = self._proxies.get(proxy_str)
+        if not info:
             return False
+
+        start_time = time.time()
+        try:
+            async with httpx.AsyncClient(proxy=proxy_str, timeout=TEST_TIMEOUT) as client:
+                response = await client.get(TEST_URL)
+                if response.status_code == 200:
+                    latency = (time.time() - start_time) * 1000
+                    info.alive = True
+                    info.latency = round(latency, 2)
+                    info.last_check = datetime.now().isoformat()
+                    info.fail_count = 0
+                    return True
+
+        except Exception:
+            pass
+
+        info.alive = False
+        info.fail_count += 1
+        info.last_check = datetime.now().isoformat()
+
+        # 失败次数过多则移除
+        if info.fail_count >= 3:
+            del self._proxies[proxy_str]
+
+        return False
 
     async def clear(self) -> None:
         """清空代理池"""
