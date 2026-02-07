@@ -82,8 +82,8 @@ class NSFWService:
             len(payload),
             payload.hex(),
         )
-        proxies = {"http": self.proxy, "https": self.proxy} if self.proxy else None
-        logger.debug(f"NSFW request: proxy={self.proxy!r}, proxies={proxies!r}")
+        proxy_arg = self.proxy if self.proxy else ""
+        logger.debug(f"NSFW request: proxy={proxy_arg!r}")
 
         try:
             async with AsyncSession(impersonate=BROWSER) as session:
@@ -92,7 +92,7 @@ class NSFWService:
                     data=payload,
                     headers=headers,
                     timeout=TIMEOUT,
-                    proxies=proxies,
+                    proxy=proxy_arg,
                 )
 
                 if response.status_code != 200:
