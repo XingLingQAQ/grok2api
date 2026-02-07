@@ -64,27 +64,13 @@ class NSFWService:
     @staticmethod
     def _build_payload() -> bytes:
         """构造请求 payload"""
-        # protobuf (match captured HAR):
-        # 0a 02 10 01                   -> field 1 (len=2) with inner bool=true
-        # 12 1a                         -> field 2, length 26
-        #   0a 18 <name>                -> nested message with name string
         name = b"always_show_nsfw_content"
         inner = b"\x0a" + bytes([len(name)]) + name
         protobuf = b"\x0a\x02\x10\x01\x12" + bytes([len(inner)]) + inner
         return encode_grpc_web_payload(protobuf)
 
-    async def enable(self, token: str) -> NSFWResult:
-        """为单个 token 开启 NSFW 模式"""
-        headers = self._build_headers(token)
-        payload = self._build_payload()
-        logger.debug(
-            "NSFW payload: len={} hex={}",
-            len(payload),
-            payload.hex(),
-        )
-        proxy_arg = self.proxy if self.proxy else ""
-        logger.warning(f"NSFW request: proxy_arg={proxy_arg!r}, self.proxy={self.proxy!r}")
-
+    async def _do_request(self, headers: dict, payload: bytes, proxy: str) -> NSFWResult:
+        """执行单次 gRPC-Web 请求"""
         try:
             async with AsyncSession(impersonate=BROWSER) as session:
                 response = await session.post(
@@ -92,7 +78,7 @@ class NSFWService:
                     data=payload,
                     headers=headers,
                     timeout=TIMEOUT,
-                    proxy=proxy_arg,
+                    proxy=proxy,
                 )
 
                 if response.status_code != 200:
@@ -102,22 +88,12 @@ class NSFWService:
                         error=f"HTTP {response.status_code}",
                     )
 
-                # 解析 gRPC-Web 响应
                 content_type = response.headers.get("content-type")
                 _, trailers = parse_grpc_web_response(
                     response.content, content_type=content_type
                 )
 
                 grpc_status = get_grpc_status(trailers)
-                logger.debug(
-                    "NSFW response: http={} grpc={} msg={} trailers={}",
-                    response.status_code,
-                    grpc_status.code,
-                    grpc_status.message,
-                    trailers,
-                )
-
-                # HTTP 200 且无 grpc-status（空响应）或 grpc-status=0 都算成功
                 success = grpc_status.code == -1 or grpc_status.ok
 
                 return NSFWResult(
@@ -128,8 +104,25 @@ class NSFWService:
                 )
 
         except Exception as e:
-            logger.error(f"NSFW enable failed: {e}")
-            return NSFWResult(success=False, http_status=0, error=str(e)[:100])
+            return NSFWResult(success=False, http_status=0, error=str(e)[:200])
+
+    async def enable(self, token: str) -> NSFWResult:
+        """为单个 token 开启 NSFW 模式（代理失败自动直连重试）"""
+        headers = self._build_headers(token)
+        payload = self._build_payload()
+        proxy_arg = self.proxy if self.proxy else ""
+
+        result = await self._do_request(headers, payload, proxy_arg)
+
+        # 代理失败时回退直连
+        if not result.success and proxy_arg:
+            logger.warning(f"NSFW 代理失败({proxy_arg}): {result.error}, 回退直连")
+            result = await self._do_request(headers, payload, "")
+
+        if not result.success:
+            logger.error(f"NSFW enable failed: {result.error or result.grpc_message}")
+
+        return result
 
 
 __all__ = ["NSFWService", "NSFWResult"]

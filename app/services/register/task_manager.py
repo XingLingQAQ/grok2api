@@ -308,21 +308,13 @@ class TaskManager:
         self._schedule_save()
 
     async def _enable_nsfw(self, sso_token: str) -> None:
-        """为 Token 开启 NSFW 模式（带回退：失败则切换代理策略重试）"""
+        """为 Token 开启 NSFW 模式"""
         try:
             from app.services.grok.services.nsfw import NSFWService
             from app.services.proxy import get_effective_proxy
 
-            proxy = get_effective_proxy()
-            logger.warning(f"NSFW 启用: proxy={proxy!r}")
-            service = NSFWService(proxy=proxy)
+            service = NSFWService(proxy=get_effective_proxy())
             result = await service.enable(sso_token)
-
-            # 失败时切换策略重试
-            if not result.success:
-                logger.warning(f"NSFW 首次失败(proxy={proxy!r}): {result.error or result.grpc_message}")
-                service_retry = NSFWService(proxy="")
-                result = await service_retry.enable(sso_token)
 
             if result.success:
                 logger.info(f"NSFW 开启成功: {sso_token[:20]}...")
