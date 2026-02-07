@@ -63,7 +63,10 @@ class ProxyScheduler:
         from app.services.proxy.pool import get_proxy_pool
         pool = get_proxy_pool()
         now = time.time()
-        did_fetch = False
+
+        # 跳过：如果已有任务在运行
+        if pool.is_fetching or pool.is_checking:
+            return
 
         # 自动抓取
         fetch_interval = get_config("proxy.auto_fetch_interval", 0)
@@ -71,11 +74,9 @@ class ProxyScheduler:
             if self._last_fetch_ts == 0:
                 self._last_fetch_ts = now
             elif (now - self._last_fetch_ts) >= fetch_interval * 60:
-                if not pool.is_fetching:
-                    logger.info("ProxyScheduler: auto fetch triggered")
-                    await pool.fetch_proxies()
-                    self._last_fetch_ts = time.time()
-                    did_fetch = True
+                logger.info("ProxyScheduler: auto fetch triggered")
+                asyncio.create_task(self._run_fetch(pool))
+                return  # 一次 tick 只触发一个任务
 
         # 自动测活
         check_interval = get_config("proxy.auto_check_interval", 0)
@@ -83,29 +84,51 @@ class ProxyScheduler:
             if self._last_check_ts == 0:
                 self._last_check_ts = now
             elif (now - self._last_check_ts) >= check_interval * 60:
-                if not pool.is_checking:
-                    concurrent = get_config("proxy.check_concurrent", 100)
-                    logger.info("ProxyScheduler: auto check triggered")
-                    await pool.check_proxies(concurrent)
-                    self._last_check_ts = time.time()
+                concurrent = get_config("proxy.check_concurrent", 100)
+                logger.info("ProxyScheduler: auto check triggered")
+                asyncio.create_task(self._run_check(pool, concurrent))
+                return
 
         # 阈值触发（带冷却：至少间隔 10 分钟）
         threshold = get_config("proxy.alive_threshold", 0)
-        threshold_cooldown = 600  # 10 分钟
-        if threshold > 0 and pool.alive_count < threshold and not did_fetch:
+        threshold_cooldown = 600
+        if threshold > 0 and pool.alive_count < threshold:
             if (now - self._last_threshold_ts) >= threshold_cooldown:
                 self._last_threshold_ts = time.time()
-                if not pool.is_fetching:
-                    logger.info(f"ProxyScheduler: alive threshold triggered ({pool.alive_count}<{threshold})")
-                    await pool.fetch_proxies()
-                    self._last_fetch_ts = time.time()
-                if not pool.is_checking:
-                    concurrent = get_config("proxy.check_concurrent", 100)
-                    await pool.check_proxies(concurrent)
-                    self._last_check_ts = time.time()
+                logger.info(f"ProxyScheduler: alive threshold triggered ({pool.alive_count}<{threshold})")
+                asyncio.create_task(self._run_fetch_then_check(pool))
             else:
                 remaining = int(threshold_cooldown - (now - self._last_threshold_ts))
                 logger.debug(f"ProxyScheduler: threshold cooldown, {remaining}s remaining")
+
+    async def _run_fetch(self, pool):
+        """后台执行抓取"""
+        try:
+            await pool.fetch_proxies()
+        except Exception as e:
+            logger.error(f"ProxyScheduler: fetch error: {e}")
+        finally:
+            self._last_fetch_ts = time.time()
+
+    async def _run_check(self, pool, concurrent: int):
+        """后台执行测活"""
+        try:
+            await pool.check_proxies(concurrent)
+        except Exception as e:
+            logger.error(f"ProxyScheduler: check error: {e}")
+        finally:
+            self._last_check_ts = time.time()
+
+    async def _run_fetch_then_check(self, pool):
+        """后台执行抓取+测活"""
+        try:
+            await pool.fetch_proxies()
+            self._last_fetch_ts = time.time()
+            concurrent = get_config("proxy.check_concurrent", 100)
+            await pool.check_proxies(concurrent)
+            self._last_check_ts = time.time()
+        except Exception as e:
+            logger.error(f"ProxyScheduler: fetch+check error: {e}")
 
 
 _proxy_scheduler: Optional[ProxyScheduler] = None
