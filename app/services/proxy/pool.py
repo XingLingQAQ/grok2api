@@ -272,8 +272,8 @@ class ProxyPool:
                         alive_count += 1
                 self._check_progress = {"done": done, "total": total, "alive": alive_count}
 
-                # 批间让出事件循环，确保 HTTP 请求能被处理
-                await asyncio.sleep(0)
+                # 批间让出事件循环
+                await asyncio.sleep(0.1)
 
             # 更新存活列表
             self._alive_proxies = [
@@ -293,22 +293,35 @@ class ProxyPool:
         return alive_count
 
     async def _check_single_proxy(self, proxy_str: str) -> bool:
-        """测试单个代理"""
+        """测试单个代理（TCP 连接测试）"""
         info = self._proxies.get(proxy_str)
         if not info:
             return False
 
         start_time = time.time()
         try:
-            async with httpx.AsyncClient(proxy=proxy_str, timeout=TEST_TIMEOUT) as client:
-                response = await client.get(TEST_URL)
-                if response.status_code == 200:
-                    latency = (time.time() - start_time) * 1000
-                    info.alive = True
-                    info.latency = round(latency, 2)
-                    info.last_check = datetime.now().isoformat()
-                    info.fail_count = 0
-                    return True
+            # 解析代理地址
+            from urllib.parse import urlparse
+            parsed = urlparse(proxy_str)
+            host = parsed.hostname
+            port = parsed.port
+            if not host or not port:
+                raise ValueError("invalid proxy address")
+
+            # TCP 连接测试
+            _, writer = await asyncio.wait_for(
+                asyncio.open_connection(host, port),
+                timeout=TEST_TIMEOUT,
+            )
+            writer.close()
+            await writer.wait_closed()
+
+            latency = (time.time() - start_time) * 1000
+            info.alive = True
+            info.latency = round(latency, 2)
+            info.last_check = datetime.now().isoformat()
+            info.fail_count = 0
+            return True
 
         except Exception:
             pass
@@ -317,7 +330,6 @@ class ProxyPool:
         info.fail_count += 1
         info.last_check = datetime.now().isoformat()
 
-        # 失败次数过多则移除
         if info.fail_count >= 3:
             del self._proxies[proxy_str]
 
